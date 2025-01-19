@@ -231,14 +231,23 @@ export default function Analytics() {
     try {
       setLoading(true)
 
-      // Fetch transactions
+      // Fetch transactions with proper error handling
       const transactionsRef = collection(db, 'transactions')
       const q = query(
         transactionsRef,
         where('userId', '==', user.uid),
         orderBy('date', 'desc')
       )
-      const querySnapshot = await getDocs(q)
+      
+      const querySnapshot = await getDocs(q).catch(error => {
+        console.error('Error fetching transactions:', error)
+        return null
+      })
+
+      if (!querySnapshot) {
+        throw new Error('Failed to fetch transactions')
+      }
+
       const transactions = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -512,26 +521,28 @@ export default function Analytics() {
   }
 
   const generateProactiveSuggestions = useCallback(async () => {
-    try {
-      if (!analyticsData || !settings?.monthlyBudget || !insights) {
-        return
-      }
+    if (!analyticsData || !settings?.monthlyBudget || !insights) {
+      setProactiveSuggestions([])
+      return
+    }
 
-      // Get upcoming bills
-      const upcomingBills = scheduledPayments?.filter(payment => {
+    try {
+      // Get upcoming bills with proper validation
+      const upcomingBills = (scheduledPayments || []).filter(payment => {
+        if (!payment?.dueDate) return false
         const dueDate = new Date(payment.dueDate)
         const today = new Date()
         const daysUntilDue = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 3600 * 24))
         return daysUntilDue <= 7 && daysUntilDue > 0
-      }) || []
+      })
 
-      // Check for potential shortages
-      const monthlyIncome = settings.monthlyBudget
-      const predictedExpenses = insights.predictedSpending
+      // Check for potential shortages with validation
+      const monthlyIncome = settings.monthlyBudget || 0
+      const predictedExpenses = insights.predictedSpending || 0
       const potentialShortage = predictedExpenses > monthlyIncome
 
-      // Generate savings opportunities
-      const savingsOpportunities = analyticsData?.aiRecommendations?.spendingOptimizations || []
+      // Generate savings opportunities with validation
+      const savingsOpportunities = analyticsData.aiRecommendations?.spendingOptimizations || []
 
       const suggestions: ProactiveSuggestion[] = [
         // Upcoming bills notifications
@@ -568,7 +579,7 @@ export default function Analytics() {
           id: `saving-${opportunity.category}`,
           type: 'saving' as const,
           title: `Savings Opportunity in ${opportunity.category}`,
-          description: opportunity.suggestions[0],
+          description: opportunity.suggestions[0] || 'Review your spending in this category',
           impact: opportunity.potentialSavings,
           priority: (opportunity.potentialSavings > 100 ? 'high' : 'medium') as const,
           action: {
@@ -579,13 +590,13 @@ export default function Analytics() {
       ]
 
       // Add investment suggestions if there's excess savings
-      if (insights.budgetAdherence > 20) {
-        const investmentAmount = insights.predictedSpending * (insights.budgetAdherence / 100)
+      if ((insights.budgetAdherence || 0) > 20) {
+        const investmentAmount = (insights.predictedSpending || 0) * ((insights.budgetAdherence || 0) / 100)
         suggestions.push({
           id: 'investment-opportunity',
           type: 'investment' as const,
           title: 'Investment Opportunity',
-          description: `You're ${insights.budgetAdherence.toFixed(1)}% under budget. Consider investing the surplus of ${formatCurrency(investmentAmount)} for better returns.`,
+          description: `You're ${(insights.budgetAdherence || 0).toFixed(1)}% under budget. Consider investing the surplus of ${formatCurrency(investmentAmount)} for better returns.`,
           impact: investmentAmount,
           priority: 'medium' as const,
           action: {
@@ -595,15 +606,16 @@ export default function Analytics() {
         })
       }
 
-      // Add goal-based suggestions
-      if (analyticsData.aiRecommendations.investmentOpportunities.length > 0) {
+      // Add goal-based suggestions with validation
+      if (analyticsData.aiRecommendations?.investmentOpportunities?.length > 0) {
         analyticsData.aiRecommendations.investmentOpportunities.forEach(opportunity => {
+          if (!opportunity?.type) return
           suggestions.push({
             id: `investment-${opportunity.type}`,
             type: 'investment' as const,
             title: opportunity.type,
-            description: opportunity.description,
-            impact: opportunity.expectedReturn,
+            description: opportunity.description || 'Investment opportunity available',
+            impact: opportunity.expectedReturn || 0,
             priority: (opportunity.riskLevel === 'low' ? 'medium' : 'high') as const,
             action: {
               text: 'Learn More',
