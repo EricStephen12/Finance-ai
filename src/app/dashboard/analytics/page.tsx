@@ -189,6 +189,8 @@ export default function Analytics() {
     amount: number;
     dueDate: string;
   }>>([])
+  const [isInitialLoad, setIsInitialLoad] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   // Memoize formatAmount function
   const formatAmount = useCallback((amount: number) => {
@@ -223,11 +225,12 @@ export default function Analytics() {
 
   const fetchAnalyticsData = useCallback(async () => {
     if (!user?.uid) {
-      console.error('No user found')
+      setError('Please sign in to view analytics')
       setLoading(false)
       return
     }
 
+    setError(null)
     try {
       setLoading(true)
 
@@ -313,6 +316,7 @@ export default function Analytics() {
       setInsights(insightsData)
     } catch (error) {
       console.error('Error fetching analytics data:', error)
+      setError('Failed to load analytics data. Please try again.')
       // Set default states on error
       setAnalyticsData(null)
       setMonthlySpending([])
@@ -355,11 +359,26 @@ export default function Analytics() {
     }
   }, [user])
 
-  // Fetch data when user changes
+  // Update useEffect for initial data loading
   useEffect(() => {
     if (user) {
-      fetchAnalyticsData()
-      fetchScheduledPayments()
+      const loadInitialData = async () => {
+        try {
+          setLoading(true)
+          await Promise.all([
+            fetchAnalyticsData(),
+            fetchScheduledPayments()
+          ])
+        } catch (error) {
+          console.error('Error loading initial data:', error)
+        } finally {
+          setLoading(false)
+          setIsInitialLoad(false)
+        }
+      }
+      loadInitialData()
+    } else {
+      setIsInitialLoad(false)
     }
   }, [user, fetchAnalyticsData, fetchScheduledPayments])
 
@@ -639,6 +658,42 @@ export default function Analytics() {
     }
   }, [analyticsData, settings?.monthlyBudget, insights, scheduledPayments, generateProactiveSuggestions])
 
+  if (isInitialLoad) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-600"></div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-12">
+        <div className="inline-flex items-center justify-center p-2 bg-red-100 rounded-full mb-4">
+          <ExclamationTriangleIcon className="h-6 w-6 text-red-600" />
+        </div>
+        <p className="text-gray-900 font-medium">{error}</p>
+        <button 
+          onClick={() => {
+            setError(null)
+            fetchAnalyticsData()
+          }}
+          className="mt-4 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700"
+        >
+          Try Again
+        </button>
+      </div>
+    )
+  }
+
+  if (!user?.uid) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-gray-600">Please sign in to view analytics</p>
+      </div>
+    )
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -685,13 +740,33 @@ export default function Analytics() {
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-gray-50 p-4 sm:p-6 lg:p-8">
-        {loading ? (
+        {isInitialLoad ? (
           <div className="flex items-center justify-center min-h-screen">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-600"></div>
+          </div>
+        ) : error ? (
+          <div className="text-center py-12">
+            <div className="inline-flex items-center justify-center p-2 bg-red-100 rounded-full mb-4">
+              <ExclamationTriangleIcon className="h-6 w-6 text-red-600" />
+            </div>
+            <p className="text-gray-900 font-medium">{error}</p>
+            <button 
+              onClick={() => {
+                setError(null)
+                fetchAnalyticsData()
+              }}
+              className="mt-4 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700"
+            >
+              Try Again
+            </button>
           </div>
         ) : !user?.uid ? (
           <div className="text-center py-12">
             <p className="text-gray-600">Please sign in to view analytics</p>
+          </div>
+        ) : loading ? (
+          <div className="flex items-center justify-center min-h-screen">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-600"></div>
           </div>
         ) : (
           <div className="space-y-6 max-w-7xl mx-auto">
