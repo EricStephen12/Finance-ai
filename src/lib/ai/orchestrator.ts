@@ -1,4 +1,5 @@
 import { analyzeSentiment, getFinancialAdvice, getInvestmentAdvice, analyzeBudget } from './models'
+import { FinancialAnalysisType } from '@/types/analytics'
 
 interface FinancialAnalysisRequest {
   type: 'emotional' | 'financial' | 'investment' | 'budget'
@@ -21,25 +22,145 @@ interface EmotionalAnalysis {
   recommendations: string[]
 }
 
-class AIOrchestratorService {
-  async analyzeFinancialData(data: FinancialAnalysisRequest): Promise<any> {
+export class AIOrchestratorService {
+  async analyzeFinancialData({ transactions, type = 'spending', goals = [] }: {
+    transactions: any[]
+    type?: FinancialAnalysisType
+    goals?: any[]
+  }) {
     try {
-      switch (data.type) {
-        case 'emotional':
-          return this.analyzeEmotionalContext(data)
-        case 'financial':
-          return this.analyzeFinancialContext(data)
-        case 'investment':
-          return this.analyzeInvestmentContext(data)
+      // Validate analysis type
+      const validTypes = ['spending', 'forecast', 'budget', 'tax']
+      if (!validTypes.includes(type)) {
+        throw new Error('Invalid analysis type')
+      }
+
+      // Process transactions
+      const processedData = transactions.map(t => ({
+        amount: t.amount || 0,
+        category: t.category || 'uncategorized',
+        date: t.date || new Date(),
+        type: t.type || 'expense'
+      }))
+
+      // Perform analysis based on type
+      switch (type) {
+        case 'spending':
+          return this.analyzeSpending(processedData)
+        case 'forecast':
+          return this.analyzeForecast(processedData, goals)
         case 'budget':
-          return this.analyzeBudgetContext(data)
+          return this.analyzeBudget(processedData)
+        case 'tax':
+          return this.analyzeTax(processedData)
         default:
-          throw new Error('Invalid analysis type')
+          throw new Error('Unsupported analysis type')
       }
     } catch (error) {
       console.error('Error in AI analysis:', error)
       throw new Error('Failed to analyze financial data')
     }
+  }
+
+  private analyzeSpending(transactions: any[]) {
+    // Group transactions by category
+    const categories = transactions.reduce((acc, t) => {
+      if (!acc[t.category]) {
+        acc[t.category] = []
+      }
+      acc[t.category].push(t)
+      return acc
+    }, {})
+
+    // Calculate patterns and opportunities
+    const patterns = Object.entries(categories).map(([category, transactions]) => {
+      const total = transactions.reduce((sum: number, t: any) => sum + Math.abs(t.amount), 0)
+      const trend = this.calculateTrend(transactions as any[])
+      return {
+        category,
+        amount: total,
+        trend,
+        anomalies: this.detectAnomalies(transactions as any[])
+      }
+    })
+
+    const opportunities = patterns
+      .filter(p => p.trend === 'increasing')
+      .map(p => ({
+        category: p.category,
+        potentialSavings: p.amount * 0.1,
+        suggestions: [
+          `Review your ${p.category} spending`,
+          `Consider alternatives for ${p.category}`,
+          `Set a budget for ${p.category}`
+        ]
+      }))
+
+    return {
+      patterns,
+      opportunities,
+      insights: this.generateInsights(patterns),
+      type: 'spending'
+    }
+  }
+
+  private analyzeForecast(transactions: any[], goals: any[]) {
+    // Implement forecast analysis
+    return {
+      predictions: [],
+      confidence: 0,
+      recommendations: []
+    }
+  }
+
+  private analyzeBudget(transactions: any[]) {
+    // Implement budget analysis
+    return {
+      allocations: [],
+      adjustments: [],
+      recommendations: []
+    }
+  }
+
+  private analyzeTax(transactions: any[]) {
+    // Implement tax analysis
+    return {
+      deductions: [],
+      credits: [],
+      strategies: []
+    }
+  }
+
+  private calculateTrend(transactions: any[]): 'increasing' | 'decreasing' | 'stable' {
+    if (transactions.length < 2) return 'stable'
+    
+    const amounts = transactions.map(t => t.amount)
+    const trend = amounts[amounts.length - 1] - amounts[0]
+    
+    return trend > 0 ? 'increasing' : trend < 0 ? 'decreasing' : 'stable'
+  }
+
+  private detectAnomalies(transactions: any[]): string[] {
+    const amounts = transactions.map(t => t.amount)
+    const mean = amounts.reduce((sum, amt) => sum + amt, 0) / amounts.length
+    const stdDev = Math.sqrt(
+      amounts.reduce((sum, amt) => sum + Math.pow(amt - mean, 2), 0) / amounts.length
+    )
+
+    return amounts
+      .map((amount, index) => {
+        if (Math.abs(amount - mean) > 2 * stdDev) {
+          return `Unusual ${amount > mean ? 'high' : 'low'} transaction on ${transactions[index].date}`
+        }
+        return null
+      })
+      .filter(Boolean) as string[]
+  }
+
+  private generateInsights(patterns: any[]): string[] {
+    return patterns.map(p => 
+      `${p.category}: ${p.trend} trend with ${p.anomalies.length} anomalies`
+    )
   }
 
   private async analyzeEmotionalContext(data: FinancialAnalysisRequest): Promise<EmotionalAnalysis> {
