@@ -186,18 +186,23 @@ export default function Analytics() {
 
   const fetchAnalyticsData = async () => {
     try {
+      if (!user) {
+        console.error('No user found')
+        return
+      }
+
       setLoading(true)
 
       // Fetch transactions
       const transactionsRef = collection(db, 'transactions')
       const q = query(
         transactionsRef,
-        where('userId', '==', user?.uid),
+        where('userId', '==', user.uid),
         orderBy('date', 'desc')
       )
       const querySnapshot = await getDocs(q)
       const transactions = querySnapshot.docs.map(doc => ({
-          id: doc.id,
+        id: doc.id,
         ...doc.data()
       })) as Transaction[]
 
@@ -459,17 +464,36 @@ export default function Analytics() {
 
       // Add investment suggestions if there's excess savings
       if (insights.budgetAdherence > 20) {
+        const investmentAmount = insights.predictedSpending * (insights.budgetAdherence / 100)
         suggestions.push({
           id: 'investment-opportunity',
           type: 'investment',
           title: 'Investment Opportunity',
-          description: `You're ${insights.budgetAdherence.toFixed(1)}% under budget. Consider investing the surplus for better returns.`,
-          impact: insights.predictedSpending * (insights.budgetAdherence/100),
+          description: `You're ${insights.budgetAdherence.toFixed(1)}% under budget. Consider investing the surplus of ${formatCurrency(investmentAmount)} for better returns.`,
+          impact: investmentAmount,
           priority: 'medium',
           action: {
-            text: 'Explore Investment Options',
+            text: 'View Investment Options',
             onClick: () => console.log('View investment options')
           }
+        })
+      }
+
+      // Add goal-based suggestions
+      if (analyticsData.aiRecommendations.investmentOpportunities.length > 0) {
+        analyticsData.aiRecommendations.investmentOpportunities.forEach(opportunity => {
+          suggestions.push({
+            id: `investment-${opportunity.type}`,
+            type: 'investment',
+            title: opportunity.type,
+            description: opportunity.description,
+            impact: opportunity.expectedReturn,
+            priority: opportunity.riskLevel === 'low' ? 'medium' : 'high',
+            action: {
+              text: 'Learn More',
+              onClick: () => console.log('View investment details', opportunity.type)
+            }
+          })
         })
       }
 
@@ -479,6 +503,13 @@ export default function Analytics() {
       setProactiveSuggestions([])
     }
   }
+
+  // Call generateProactiveSuggestions when relevant data changes
+  useEffect(() => {
+    if (analyticsData && settings?.monthlyBudget && insights) {
+      generateProactiveSuggestions()
+    }
+  }, [analyticsData, settings?.monthlyBudget, insights, scheduledPayments])
 
   if (loading) {
     return (
