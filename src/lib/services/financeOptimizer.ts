@@ -502,8 +502,57 @@ class FinanceOptimizer {
   }
 
   private calculateSavingsPotential(data: any, analysis: any): Budget['savings'] {
-    // Implement savings potential calculation
-    return {} as Budget['savings']
+    try {
+      const { transactions, goals } = data
+      const monthlyIncome = this.calculateMonthlyIncome(transactions)
+      const monthlyExpenses = this.calculateMonthlyExpenses(transactions)
+      const currentSavings = monthlyIncome - monthlyExpenses
+
+      return {
+        current: currentSavings,
+        potential: monthlyIncome * 0.3, // Target 30% savings rate
+        recommendations: [
+          'Automate savings transfers',
+          'Review and reduce non-essential expenses',
+          'Look for additional income opportunities'
+        ]
+      }
+    } catch (error) {
+      console.error('Error calculating savings potential:', error)
+      return {
+        current: 0,
+        potential: 0,
+        recommendations: []
+      }
+    }
+  }
+
+  private calculateMonthlyIncome(transactions: Transaction[]): number {
+    try {
+      const incomeTransactions = transactions.filter(t => t.amount > 0)
+      if (!incomeTransactions.length) return 0
+
+      const totalIncome = incomeTransactions.reduce((sum, t) => sum + t.amount, 0)
+      const monthsSpan = this.calculateMonthsSpan(incomeTransactions)
+      
+      return monthsSpan > 0 ? totalIncome / monthsSpan : 0
+    } catch (error) {
+      console.error('Error calculating monthly income:', error)
+      return 0
+    }
+  }
+
+  private calculateMonthsSpan(transactions: Transaction[]): number {
+    if (!transactions.length) return 0
+
+    const dates = transactions.map(t => new Date(t.date))
+    const minDate = new Date(Math.min(...dates.map(d => d.getTime())))
+    const maxDate = new Date(Math.max(...dates.map(d => d.getTime())))
+
+    return (
+      (maxDate.getFullYear() - minDate.getFullYear()) * 12 +
+      (maxDate.getMonth() - minDate.getMonth()) + 1
+    )
   }
 
   // Helper methods for debt optimization
@@ -534,39 +583,221 @@ class FinanceOptimizer {
 
   // Helper methods for cashflow optimization
   private async analyzeCashflowPatterns(transactions: Transaction[]): Promise<any> {
-    // Implement cashflow pattern analysis
-    return {}
+    try {
+      const monthlyData = new Map<string, { inflows: number; outflows: number }>()
+      
+      transactions.forEach(t => {
+        const date = new Date(t.date)
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+        
+        if (!monthlyData.has(monthKey)) {
+          monthlyData.set(monthKey, { inflows: 0, outflows: 0 })
+        }
+        
+        const monthData = monthlyData.get(monthKey)!
+        if (t.amount > 0) {
+          monthData.inflows += t.amount
+        } else {
+          monthData.outflows += Math.abs(t.amount)
+        }
+      })
+
+      return {
+        monthly: Array.from(monthlyData.entries()).map(([month, data]) => ({
+          month,
+          ...data
+        })),
+        patterns: this.identifyCashflowPatterns(monthlyData)
+      }
+    } catch (error) {
+      console.error('Error analyzing cashflow patterns:', error)
+      return {
+        monthly: [],
+        patterns: []
+      }
+    }
+  }
+
+  private identifyCashflowPatterns(monthlyData: Map<string, { inflows: number; outflows: number }>): any[] {
+    const patterns = []
+    const monthlyBalances = Array.from(monthlyData.values())
+      .map(data => data.inflows - data.outflows)
+
+    // Check for consistent deficit
+    const deficitMonths = monthlyBalances.filter(balance => balance < 0).length
+    if (deficitMonths > monthlyBalances.length * 0.3) {
+      patterns.push({
+        type: 'deficit',
+        severity: deficitMonths / monthlyBalances.length,
+        description: 'Frequent monthly deficits detected'
+      })
+    }
+
+    // Check for high variance
+    const mean = monthlyBalances.reduce((sum, bal) => sum + bal, 0) / monthlyBalances.length
+    const variance = monthlyBalances.reduce((sum, bal) => sum + Math.pow(bal - mean, 2), 0) / monthlyBalances.length
+    if (variance > Math.abs(mean) * 2) {
+      patterns.push({
+        type: 'volatility',
+        severity: Math.min(1, variance / (Math.abs(mean) * 4)),
+        description: 'High cashflow volatility detected'
+      })
+    }
+
+    return patterns
   }
 
   private optimizeCashflowTiming(analysis: any): CashflowOptimization['timing'] {
-    // Implement cashflow timing optimization
-    return {} as CashflowOptimization['timing']
+    try {
+      const { monthly, patterns } = analysis
+      
+      return {
+        inflows: monthly.map((m: any) => ({
+          date: m.month,
+          amount: m.inflows,
+          source: 'income'
+        })),
+        outflows: monthly.map((m: any) => ({
+          date: m.month,
+          amount: m.outflows,
+          category: 'expenses',
+          flexibility: patterns.some((p: any) => p.type === 'volatility') ? 'flexible' : 'fixed'
+        }))
+      }
+    } catch (error) {
+      console.error('Error optimizing cashflow timing:', error)
+      return {
+        inflows: [],
+        outflows: []
+      }
+    }
   }
 
   private generateCashflowRecommendations(analysis: any): any[] {
-    // Implement cashflow recommendation generation
-    return []
+    try {
+      const recommendations = []
+      const { patterns } = analysis
+
+      patterns.forEach((pattern: any) => {
+        if (pattern.type === 'deficit') {
+          recommendations.push({
+            action: 'Reduce monthly expenses',
+            impact: pattern.severity * 1000,
+            effort: 'high',
+            priority: pattern.severity > 0.5 ? 1 : 2
+          })
+        }
+
+        if (pattern.type === 'volatility') {
+          recommendations.push({
+            action: 'Stabilize income sources',
+            impact: pattern.severity * 800,
+            effort: 'medium',
+            priority: pattern.severity > 0.7 ? 1 : 3
+          })
+        }
+      })
+
+      return recommendations
+    } catch (error) {
+      console.error('Error generating cashflow recommendations:', error)
+      return []
+    }
   }
 
   private calculateCashflowImprovements(analysis: any): any[] {
-    // Implement cashflow improvement calculation
-    return []
+    try {
+      const improvements = []
+      const { patterns } = analysis
+
+      if (patterns.some((p: any) => p.type === 'deficit')) {
+        improvements.push({
+          metric: 'Monthly Balance',
+          current: -500, // Example value
+          potential: 200,
+          timeframe: '3 months'
+        })
+      }
+
+      if (patterns.some((p: any) => p.type === 'volatility')) {
+        improvements.push({
+          metric: 'Cashflow Stability',
+          current: 0.4, // Example value
+          potential: 0.8,
+          timeframe: '6 months'
+        })
+      }
+
+      return improvements
+    } catch (error) {
+      console.error('Error calculating cashflow improvements:', error)
+      return []
+    }
   }
 
   // Helper methods for investment recommendations
   private calculateInvestableCapital(data: any): number {
-    // Implement investable capital calculation
-    return 0
+    try {
+      const { transactions, goals, preferences } = data
+      const monthlyIncome = this.calculateMonthlyIncome(transactions)
+      const monthlyExpenses = this.calculateMonthlyExpenses(transactions)
+      const emergencyFundNeeded = monthlyExpenses * 6
+      const currentSavings = this.calculateCurrentSavings(transactions)
+
+      return Math.max(0, currentSavings - emergencyFundNeeded)
+    } catch (error) {
+      console.error('Error calculating investable capital:', error)
+      return 0
+    }
+  }
+
+  private calculateCurrentSavings(transactions: Transaction[]): number {
+    try {
+      return transactions.reduce((sum, t) => sum + t.amount, 0)
+    } catch (error) {
+      console.error('Error calculating current savings:', error)
+      return 0
+    }
   }
 
   private calculateMonthlyInvestmentCapacity(data: any): number {
-    // Implement monthly investment capacity calculation
-    return 0
+    try {
+      const monthlyIncome = this.calculateMonthlyIncome(data.transactions)
+      const monthlyExpenses = this.calculateMonthlyExpenses(data.transactions)
+      const savingsRate = data.preferences?.savingsAggressiveness === 'aggressive' ? 0.3 :
+                         data.preferences?.savingsAggressiveness === 'moderate' ? 0.2 :
+                         0.1
+
+      return Math.max(0, (monthlyIncome - monthlyExpenses) * savingsRate)
+    } catch (error) {
+      console.error('Error calculating monthly investment capacity:', error)
+      return 0
+    }
   }
 
   private calculateInvestmentTimeHorizon(goals: FinancialGoal[]): number {
-    // Implement investment time horizon calculation
-    return 0
+    try {
+      if (!goals.length) return 5 // Default to 5 years
+
+      const investmentGoals = goals.filter(g => 
+        g.type === 'investment' || g.type === 'retirement'
+      )
+
+      if (!investmentGoals.length) return 5
+
+      const latestDeadline = Math.max(
+        ...investmentGoals.map(g => new Date(g.deadline).getTime())
+      )
+
+      const yearsUntilDeadline = Math.ceil(
+        (latestDeadline - Date.now()) / (1000 * 60 * 60 * 24 * 365)
+      )
+
+      return Math.max(1, yearsUntilDeadline)
+    } catch (error) {
+      console.error('Error calculating investment time horizon:', error)
+      return 5
+    }
   }
 
   // Helper methods for emergency fund planning
