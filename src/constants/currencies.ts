@@ -63,18 +63,54 @@ export function formatCurrency(amount: number, currencyCode: CurrencyCode = 'USD
   const currency = currencies[currencyCode];
   if (!currency) return `${amount.toFixed(2)}`;
 
-  // Special formatting for some currencies
+  // Format number based on currency type
+  const formattedAmount = new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: getCurrencyDecimals(currencyCode),
+    maximumFractionDigits: getCurrencyDecimals(currencyCode),
+    useGrouping: true
+  }).format(amount);
+
+  // Handle special symbol placements
   switch (currencyCode) {
-    case 'JPY':
-    case 'KRW':
-      // These currencies typically don't use decimal places
-      return `${currency.symbol}${Math.round(amount).toLocaleString()}`;
+    // Currencies with symbol after the amount
+    case 'DKK':
+    case 'NOK':
+    case 'SEK':
+      return `${formattedAmount} ${currency.symbol}`;
+    
+    // Currencies that need space between symbol and amount
+    case 'EUR':
+      return `${currency.symbol} ${formattedAmount}`;
+    
+    // Crypto currencies
     case 'BTC':
     case 'ETH':
-      // Crypto with more decimal places
-      return `${currency.symbol}${amount.toFixed(8)}`;
+    case 'USDT':
+      return `${currency.symbol}${formattedAmount}`;
+    
+    // Default: symbol before amount, no space
     default:
-      // Standard formatting with 2 decimal places
-      return `${currency.symbol}${amount.toFixed(2)}`;
+      return `${currency.symbol}${formattedAmount}`;
+  }
+}
+
+// Helper function to determine decimal places for different currencies
+function getCurrencyDecimals(currencyCode: CurrencyCode): number {
+  switch (currencyCode) {
+    // Currencies typically without decimal places
+    case 'JPY':
+    case 'KRW':
+    case 'VND':
+    case 'HUF':
+      return 0;
+    
+    // Cryptocurrencies with more decimal places
+    case 'BTC':
+    case 'ETH':
+      return 8;
+    
+    // Most fiat currencies use 2 decimal places
+    default:
+      return 2;
   }
 } 

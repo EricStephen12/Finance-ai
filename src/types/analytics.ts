@@ -1,3 +1,5 @@
+import { Category } from './category'
+
 export type FinancialAnalysisType = 'spending' | 'forecast' | 'budget' | 'tax'
 
 export interface SpendingAnalysis {
@@ -60,3 +62,93 @@ export interface TaxAnalysis {
 }
 
 export type FinancialAnalysis = SpendingAnalysis | ForecastAnalysis | BudgetAnalysis | TaxAnalysis 
+
+export interface SpendingPattern {
+  temporal: TemporalPattern[]
+  categorical: CategoryPattern[]
+  recurring: RecurringPattern[]
+}
+
+export interface TemporalPattern {
+  daily: TrendInfo
+  weekly: TrendInfo
+  monthly: TrendInfo
+  seasonality: SeasonalityInfo
+}
+
+export interface CategoryPattern {
+  category: Category
+  total: number
+  average: number
+  trend: TrendInfo
+  frequency: number
+}
+
+export interface RecurringPattern {
+  amount: number
+  category: Category
+  merchant: string
+  interval: number
+  confidence: number
+}
+
+export interface TrendInfo {
+  slope: number
+  intercept: number
+  direction: 'increasing' | 'decreasing' | 'stable'
+  strength: number
+}
+
+export interface SeasonalityInfo {
+  exists: boolean
+  period: number
+  strength: number
+}
+
+// Prediction Types
+export interface SpendingForecast {
+  daily: DailyForecast[]
+  byCategory: CategoryForecast[]
+  confidence: number
+}
+
+export interface DailyForecast {
+  date: Date
+  expectedAmount: number
+  lowerBound: number
+  upperBound: number
+  confidence: number
+}
+
+export interface CategoryForecast {
+  category: Category
+  expectedAmount: number
+  trend: TrendInfo
+  confidence: number
+}
+
+export interface SpendingPatterns {
+  dailyAverage: number
+  categoryDistribution: Record<Category, number>
+  volatility: number
+}
+
+export interface RecurringExpense {
+  amount: number
+  category: Category
+  interval: number
+  probability: number
+  nextExpected: Date
+}
+
+export interface TrendAnalysis {
+  shortTerm: TrendMetrics
+  mediumTerm: TrendMetrics
+  longTerm: TrendMetrics
+}
+
+export interface TrendMetrics {
+  slope: number
+  intercept: number
+  r2: number
+} 

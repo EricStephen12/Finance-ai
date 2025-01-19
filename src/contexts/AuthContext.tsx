@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 import { 
   User,
   signInWithEmailAndPassword,
@@ -12,29 +12,34 @@ import {
   signInWithRedirect,
   getRedirectResult,
   updateProfile,
-  sendPasswordResetEmail
+  sendPasswordResetEmail,
+  getAuth
 } from 'firebase/auth'
 import { auth, db, googleProvider } from '@/lib/firebase/config'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
+import { app } from '@/lib/firebase/client'
 
 interface AuthContextType {
   user: User | null
   loading: boolean
-  hasCompletedOnboarding: boolean
+  error: Error | null
   signIn: (email: string, password: string) => Promise<void>
-  signUp: (email: string, password: string, name: string) => Promise<void>
+  signUp: (email: string, password: string) => Promise<void>
   signInWithGoogle: () => Promise<void>
   signOut: () => Promise<void>
   resetPassword: (email: string) => Promise<void>
   handleRedirectResult: () => Promise<void>
+  getIdToken: () => Promise<string>
 }
 
-const AuthContext = createContext<AuthContextType | null>(null)
+const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
-  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  const auth = getAuth(app)
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -42,30 +47,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (user) {
         // Check if user has completed onboarding
         const userDoc = await getDoc(doc(db, 'users', user.uid))
-        setHasCompletedOnboarding(userDoc.exists() && userDoc.data()?.hasCompletedOnboarding)
+        if (userDoc.exists()) {
+          const data = userDoc.data()
+          if (data?.hasCompletedOnboarding) {
+            setUser(user)
+          } else {
+            setUser(null)
+          }
+        } else {
+          setUser(null)
+        }
+      } else {
+        setUser(null)
       }
       setLoading(false)
     })
 
     return () => unsubscribe()
-  }, [])
+  }, [auth])
 
   const signIn = async (email: string, password: string) => {
     try {
+      setError(null)
       await signInWithEmailAndPassword(auth, email, password)
-    } catch (error) {
-      console.error('Error signing in:', error)
-      throw error
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('Failed to sign in'))
+      throw err
     }
   }
 
-  const signUp = async (email: string, password: string, name: string) => {
+  const signUp = async (email: string, password: string) => {
     try {
-      const { user } = await createUserWithEmailAndPassword(auth, email, password)
-      await updateProfile(user, { displayName: name })
-    } catch (error) {
-      console.error('Error signing up:', error)
-      throw error
+      setError(null)
+      await createUserWithEmailAndPassword(auth, email, password)
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('Failed to sign up'))
+      throw err
     }
   }
 
@@ -144,10 +161,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     try {
+      setError(null)
       await firebaseSignOut(auth)
-    } catch (error) {
-      console.error('Error signing out:', error)
-      throw error
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('Failed to sign out'))
+      throw err
     }
   }
 
@@ -160,18 +178,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  const getIdToken = async () => {
+    if (!user) {
+      throw new Error('No user logged in')
+    }
+    return user.getIdToken()
+  }
+
+  const value = {
+    user,
+    loading,
+    error,
+    signIn,
+    signUp,
+    signInWithGoogle,
+    handleRedirectResult,
+    signOut,
+    resetPassword,
+    getIdToken
+  }
+
   return (
-    <AuthContext.Provider value={{
-      user,
-      loading,
-      hasCompletedOnboarding,
-      signIn,
-      signUp,
-      signInWithGoogle,
-      handleRedirectResult,
-      signOut,
-      resetPassword
-    }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   )
@@ -179,7 +207,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext)
-  if (!context) {
+  if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider')
   }
   return context

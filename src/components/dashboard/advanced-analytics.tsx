@@ -1,10 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { ArrowTrendingUpIcon, ArrowTrendingDownIcon, CurrencyDollarIcon, SparklesIcon, InformationCircleIcon, ChartBarIcon, BanknotesIcon, RocketLaunchIcon, DocumentTextIcon, ChartPieIcon } from '@heroicons/react/24/outline'
 import Tippy from '@tippyjs/react'
+import { AnalyticsEngine } from '@/lib/services/analyticsEngine'
+import { PredictionEngine } from '@/lib/services/predictionEngine'
+import { AnomalyDetector } from '@/lib/services/anomalyDetector'
+import { useTransactions } from '@/hooks/useTransactions'
+import { SpendingPattern, AnomalyReport, SpendingForecast } from '@/types/analytics'
 
 const mockData = {
   monthly: [
@@ -33,25 +38,30 @@ const mockData = {
 const COLORS = ['#4F46E5', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899']
 
 export default function AdvancedAnalytics() {
+  const { transactions } = useTransactions()
+  const [patterns, setPatterns] = useState<SpendingPattern | null>(null)
+  const [anomalies, setAnomalies] = useState<AnomalyReport | null>(null)
+  const [forecast, setForecast] = useState<SpendingForecast | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
   const [timeframe, setTimeframe] = useState<'1M' | '3M' | '6M' | '1Y'>('6M')
   const [focusArea, setFocusArea] = useState<'overview' | 'spending' | 'prediction'>('overview')
   const [selectedChart, setSelectedChart] = useState<'area' | 'pie'>('area')
 
   const stats = [
     {
-      title: 'Portfolio Alpha',
+      title: 'Portfolio Performance',
       value: '+28.5%',
       change: '+15.3%',
       trend: 'up',
-      description: "Your AI-optimized strategy is outperforming the market significantly",
+      description: "Your optimized strategy is outperforming market benchmarks",
       icon: <CurrencyDollarIcon className="h-5 w-5 text-emerald-400" />
     },
     {
-      title: 'Wealth Acceleration',
+      title: 'Growth Rate',
       value: '3.8x',
       change: '+2.1x',
       trend: 'up',
-      description: "Your empire is growing faster than 98% of users",
+      description: "Your portfolio growth is in the top performance tier",
       icon: <ArrowTrendingUpIcon className="h-5 w-5 text-blue-400" />
     },
     {
@@ -59,359 +69,216 @@ export default function AdvancedAnalytics() {
       value: '2.1 Sharpe',
       change: '+0.8',
       trend: 'up',
-      description: "Your portfolio's efficiency is at institutional grade levels",
+      description: "Your portfolio maintains institutional-grade efficiency levels",
       icon: <ArrowTrendingDownIcon className="h-5 w-5 text-violet-400" />
     },
     {
-      title: 'AI Confidence Score',
+      title: 'Strategy Confidence',
       value: '94.8%',
       change: '+5.2%',
       trend: 'up',
-      description: "Our quantum models have high conviction in your strategy",
+      description: "Advanced models show high reliability in your strategy",
       icon: <SparklesIcon className="h-5 w-5 text-amber-400" />
     }
   ]
 
-  return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="bg-gradient-to-br from-primary-900 via-primary-800 to-primary-700 rounded-xl overflow-hidden">
-        <div className="backdrop-blur-sm bg-black/5 p-6">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
-            <div className="max-w-[600px]">
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <SparklesIcon className="h-6 w-6" />
-                Let's analyze your financial journey together
-              </h2>
-              <p className="text-sm text-primary-100 mt-2">
-                I've analyzed your finances to help you understand where you're thriving and where we can grow
+  useEffect(() => {
+    async function analyzeData() {
+      if (!transactions.length) return
+
+      setIsLoading(true)
+      try {
+        // Initialize our analytics engines
+        const analyticsEngine = new AnalyticsEngine()
+        const predictionEngine = new PredictionEngine()
+        const anomalyDetector = new AnomalyDetector()
+
+        // Run parallel analysis
+        const [patternResults, anomalyResults, forecastResults] = await Promise.all([
+          analyticsEngine.detectSpendingPatterns(transactions),
+          anomalyDetector.detectAnomalies(transactions),
+          predictionEngine.forecastSpending(transactions)
+        ])
+
+        setPatterns(patternResults)
+        setAnomalies(anomalyResults)
+        setForecast(forecastResults)
+      } catch (error) {
+        console.error('Error analyzing data:', error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    analyzeData()
+  }, [transactions])
+
+  // Render functions for different sections
+  const renderPatternAnalysis = () => {
+    if (!patterns) return null
+
+    return (
+      <div className="space-y-4">
+        <h3 className="text-lg font-semibold">Spending Patterns</h3>
+        
+        {/* Temporal Patterns */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {patterns.temporal.map((pattern, index) => (
+            <div key={index} className="p-4 bg-white rounded-lg shadow">
+              <h4 className="font-medium">{pattern.daily.direction} Trend</h4>
+              <p className="text-sm text-gray-600">
+                Confidence: {(pattern.daily.strength * 100).toFixed(1)}%
               </p>
             </div>
-            <div className="flex items-center">
-              <Tippy content="Choose how far back you'd like us to look - I'll help you spot trends and patterns">
-                <select
-                  value={timeframe}
-                  onChange={(e) => setTimeframe(e.target.value as any)}
-                  className="bg-white/10 backdrop-blur-sm text-white border border-white/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300 hover:bg-white/20 transition-colors cursor-help"
-                >
-                  <option value="1M">Last month's journey</option>
-                  <option value="3M">Past 3 months together</option>
-                  <option value="6M">Last 6 months of progress</option>
-                  <option value="1Y">Your full year journey</option>
-                </select>
-              </Tippy>
-            </div>
-          </div>
+          ))}
+        </div>
 
-          {/* Stats Overview */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {stats.map((stat, index) => (
-              <motion.div
-                key={stat.title}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
-                className="bg-white/10 backdrop-blur-sm rounded-xl p-4 hover:bg-white/15 transition-all duration-200"
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-sm text-primary-100">{stat.title}</p>
-                  <div className="p-2 rounded-lg bg-white/10">
-                    {stat.icon}
-                  </div>
-                </div>
-                <p className="text-2xl font-bold text-white">{stat.value}</p>
-                <div className="mt-3 flex items-center justify-between">
-                  <span className={`inline-flex items-center text-sm ${
-                    stat.trend === 'up' ? 'text-emerald-400' : 'text-red-400'
-                  }`}>
-                    {stat.trend === 'up' ? (
-                      <ArrowTrendingUpIcon className="h-4 w-4 mr-1" />
-                    ) : (
-                      <ArrowTrendingDownIcon className="h-4 w-4 mr-1" />
-                    )}
-                    {stat.change}
+        {/* Category Patterns */}
+        <div className="mt-6">
+          <h4 className="font-medium mb-3">Category Analysis</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {patterns.categorical.map((pattern, index) => (
+              <div key={index} className="p-4 bg-white rounded-lg shadow">
+                <div className="flex justify-between items-center">
+                  <span className="font-medium">{pattern.category}</span>
+                  <span className="text-sm text-gray-600">
+                    ${pattern.average.toFixed(2)} avg
                   </span>
-                  <span className="text-xs text-primary-200">{stat.description}</span>
                 </div>
-              </motion.div>
+                <p className="text-sm text-gray-600 mt-1">
+                  {pattern.trend.direction} trend ({(pattern.frequency * 30).toFixed(1)} times/month)
+                </p>
+              </div>
             ))}
           </div>
         </div>
       </div>
+    )
+  }
 
-      {/* Analysis Focus */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-        <div className="p-6">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-2">
-              <h3 className="text-lg font-semibold text-gray-900">What would you like us to explore together?</h3>
-              <Tippy content="I can help you understand different aspects of your finances in a way that makes sense">
-                <InformationCircleIcon className="h-5 w-5 text-gray-400 hover:text-gray-600 cursor-help" />
-              </Tippy>
-            </div>
-          </div>
+  const renderAnomalyDetection = () => {
+    if (!anomalies) return null
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {[
-              {
-                id: 'overview',
-                icon: ChartBarIcon,
-                title: 'Your Complete Picture',
-                description: "Let's see how all your finances work together"
-              },
-              {
-                id: 'spending',
-                icon: BanknotesIcon,
-                title: 'Your Spending Story',
-                description: "I'll help you understand your spending patterns"
-              },
-              {
-                id: 'prediction',
-                icon: RocketLaunchIcon,
-                title: 'Your Future Path',
-                description: "Let's plan your journey ahead together"
-              }
-            ].map((item) => (
-              <motion.button
-                key={item.id}
-                onClick={() => setFocusArea(item.id as any)}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                className={`
-                  p-4 rounded-xl text-left transition-all duration-200
-                  ${focusArea === item.id
-                    ? 'bg-primary-50 border-2 border-primary-500 shadow-sm'
-                    : 'bg-gray-50 border-2 border-transparent hover:border-primary-200'
-                  }
-                `}
-              >
-                <item.icon className={`h-6 w-6 mb-3 ${
-                  focusArea === item.id ? 'text-primary-600' : 'text-gray-500'
-                }`} />
-                <h4 className="text-base font-semibold text-gray-900">{item.title}</h4>
-                <p className="text-sm text-gray-600 mt-1">{item.description}</p>
-              </motion.button>
-            ))}
-          </div>
-        </div>
-      </div>
+    return (
+      <div className="space-y-4">
+        <h3 className="text-lg font-semibold">Anomaly Detection</h3>
 
-      {/* Quick Actions */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Tippy content="I'll create a detailed report that helps you understand your finances better">
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            className="flex items-center justify-center gap-2 p-4 bg-gradient-to-br from-primary-500 to-primary-600 text-white rounded-xl hover:shadow-lg transition-all duration-200"
-          >
-            <DocumentTextIcon className="h-5 w-5" />
-            <span className="text-sm font-medium">Let's review your progress together</span>
-          </motion.button>
-        </Tippy>
-        <Tippy content="I'll help you set achievable goals and create a plan to reach them">
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            className="flex items-center justify-center gap-2 p-4 bg-gradient-to-br from-primary-500 to-primary-600 text-white rounded-xl hover:shadow-lg transition-all duration-200"
-          >
-            <RocketLaunchIcon className="h-5 w-5" />
-            <span className="text-sm font-medium">Plan your next financial milestone</span>
-          </motion.button>
-        </Tippy>
-      </div>
-
-      {/* Enhanced Charts Section */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-        <div className="p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-              <ChartBarIcon className="h-5 w-5 text-primary-500" />
-              Your Financial Story
-            </h3>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setSelectedChart('area')}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
-                  selectedChart === 'area'
-                    ? 'bg-primary-100 text-primary-700'
-                    : 'text-gray-600 hover:bg-gray-100'
-                }`}
-              >
-                Flow Analysis
-              </button>
-              <button
-                onClick={() => setSelectedChart('pie')}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
-                  selectedChart === 'pie'
-                    ? 'bg-primary-100 text-primary-700'
-                    : 'text-gray-600 hover:bg-gray-100'
-                }`}
-              >
-                Spending Breakdown
-              </button>
-            </div>
-          </div>
-
-          <div className="h-[400px]">
-            <ResponsiveContainer width="100%" height="100%">
-              {selectedChart === 'area' ? (
-                <AreaChart data={mockData.monthly}>
-                  <defs>
-                    <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#4F46E5" stopOpacity={0.2}/>
-                      <stop offset="95%" stopColor="#4F46E5" stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="colorExpenses" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#EF4444" stopOpacity={0.2}/>
-                      <stop offset="95%" stopColor="#EF4444" stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="colorSavings" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10B981" stopOpacity={0.2}/>
-                      <stop offset="95%" stopColor="#10B981" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                  <XAxis dataKey="name" stroke="#6B7280" fontSize={12} />
-                  <YAxis stroke="#6B7280" fontSize={12} />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: 'white',
-                      border: 'none',
-                      borderRadius: '12px',
-                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
-                    }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="income"
-                    stroke="#4F46E5"
-                    strokeWidth={2}
-                    fillOpacity={1}
-                    fill="url(#colorIncome)"
-                    name="Income"
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="expenses"
-                    stroke="#EF4444"
-                    strokeWidth={2}
-                    fillOpacity={1}
-                    fill="url(#colorExpenses)"
-                    name="Expenses"
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="savings"
-                    stroke="#10B981"
-                    strokeWidth={2}
-                    fillOpacity={1}
-                    fill="url(#colorSavings)"
-                    name="Savings"
-                  />
-                </AreaChart>
-              ) : (
-                <PieChart>
-                  <Pie
-                    data={mockData.categories}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={80}
-                    outerRadius={140}
-                    fill="#8884d8"
-                    paddingAngle={2}
-                    dataKey="amount"
-                  >
-                    {mockData.categories.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: 'white',
-                      border: 'none',
-                      borderRadius: '12px',
-                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
-                    }}
-                    formatter={(value: number) => [`$${value}`, 'Amount']}
-                  />
-                </PieChart>
-              )}
-            </ResponsiveContainer>
-          </div>
-
-          {/* Legend for Pie Chart */}
-          {selectedChart === 'pie' && (
-            <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 gap-4">
-              {mockData.categories.map((category, index) => (
-                <div key={category.name} className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
-                  <span className="text-sm text-gray-600">{category.name}</span>
-                  <span className="text-sm font-medium text-gray-900">${category.amount}</span>
+        {/* Amount Anomalies */}
+        {anomalies.amountAnomalies.length > 0 && (
+          <div className="mt-4">
+            <h4 className="font-medium mb-2">Unusual Amounts</h4>
+            <div className="space-y-2">
+              {anomalies.amountAnomalies.map((anomaly, index) => (
+                <div key={index} className="p-3 bg-white rounded-lg shadow">
+                  <div className="flex justify-between items-center">
+                    <span className="font-medium">${anomaly.transaction.amount}</span>
+                    <span className={`text-sm px-2 py-1 rounded ${
+                      anomaly.severity === 'high' ? 'bg-red-100 text-red-800' :
+                      anomaly.severity === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-blue-100 text-blue-800'
+                    }`}>
+                      {anomaly.severity}
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-600 mt-1">{anomaly.reason}</p>
                 </div>
               ))}
             </div>
-          )}
-        </div>
-      </div>
+          </div>
+        )}
 
-      {/* Predictions Section */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-        <div className="p-6">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                <RocketLaunchIcon className="h-5 w-5 text-primary-500" />
-                Looking Ahead
-              </h3>
-              <p className="text-sm text-gray-600 mt-1">Here's what I predict for your next few months</p>
+        {/* Pattern Breaks */}
+        {anomalies.patternBreaks.length > 0 && (
+          <div className="mt-4">
+            <h4 className="font-medium mb-2">Pattern Breaks</h4>
+            <div className="space-y-2">
+              {anomalies.patternBreaks.map((break_, index) => (
+                <div key={index} className="p-3 bg-white rounded-lg shadow">
+                  <div className="flex justify-between items-center">
+                    <span className="font-medium">{break_.pattern.category}</span>
+                    <span className="text-sm text-gray-600">
+                      {(break_.deviation * 100).toFixed(1)}% deviation
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
+        )}
+      </div>
+    )
+  }
 
-          <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={mockData.predictions}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                <XAxis dataKey="month" stroke="#6B7280" fontSize={12} />
-                <YAxis stroke="#6B7280" fontSize={12} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: 'white',
-                    border: 'none',
-                    borderRadius: '12px',
-                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
-                  }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="predicted"
-                  stroke="#4F46E5"
-                  strokeWidth={2}
-                  dot={{ fill: '#4F46E5', r: 4 }}
-                  name="Predicted"
-                />
-                <Line
-                  type="monotone"
-                  dataKey="upper"
-                  stroke="#10B981"
-                  strokeWidth={2}
-                  strokeDasharray="5 5"
-                  dot={false}
-                  name="Optimistic"
-                />
-                <Line
-                  type="monotone"
-                  dataKey="lower"
-                  stroke="#EF4444"
-                  strokeWidth={2}
-                  strokeDasharray="5 5"
-                  dot={false}
-                  name="Conservative"
-                />
-              </LineChart>
-            </ResponsiveContainer>
+  const renderForecast = () => {
+    if (!forecast) return null
+
+    return (
+      <div className="space-y-4">
+        <h3 className="text-lg font-semibold">Spending Forecast</h3>
+
+        {/* Daily Forecast */}
+        <div className="mt-4">
+          <h4 className="font-medium mb-2">Next 30 Days</h4>
+          <div className="space-y-2">
+            {forecast.daily.slice(0, 5).map((day, index) => (
+              <div key={index} className="p-3 bg-white rounded-lg shadow">
+                <div className="flex justify-between items-center">
+                  <span className="font-medium">
+                    {day.date.toLocaleDateString()}
+                  </span>
+                  <span className="text-sm text-gray-600">
+                    ${day.expectedAmount.toFixed(2)}
+                    <span className="text-xs ml-1">
+                      ±${(day.upperBound - day.expectedAmount).toFixed(2)}
+                    </span>
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                  <div
+                    className="bg-blue-600 h-2 rounded-full"
+                    style={{
+                      width: `${day.confidence * 100}%`
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Category Forecast */}
+        <div className="mt-6">
+          <h4 className="font-medium mb-2">Category Predictions</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {forecast.byCategory.map((category, index) => (
+              <div key={index} className="p-4 bg-white rounded-lg shadow">
+                <div className="flex justify-between items-center">
+                  <span className="font-medium">{category.category}</span>
+                  <span className="text-sm text-gray-600">
+                    ${category.expectedAmount.toFixed(2)}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-600 mt-1">
+                  {category.trend.direction} trend
+                  ({(category.confidence * 100).toFixed(1)}% confidence)
+                </p>
+              </div>
+            ))}
           </div>
         </div>
       </div>
+    )
+  }
+
+  if (isLoading) {
+    return <div>Loading analytics...</div>
+  }
+
+  return (
+    <div className="space-y-8">
+      {renderPatternAnalysis()}
+      {renderAnomalyDetection()}
+      {renderForecast()}
     </div>
   )
 } 
