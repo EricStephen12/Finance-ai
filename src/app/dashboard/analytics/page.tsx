@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import {
   AreaChart,
@@ -119,15 +119,6 @@ const COLORS = [
   '#06B6D4', // Cyan
 ]
 
-const formatAmount = (amount: number) => {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0
-  }).format(amount)
-}
-
 export default function Analytics() {
   const { user } = useAuth()
   const { settings, formatCurrency } = useSettings()
@@ -152,45 +143,44 @@ export default function Analytics() {
     dueDate: string;
   }>>([])
 
-  useEffect(() => {
-    if (user) {
-      fetchAnalyticsData()
-      fetchScheduledPayments()
+  // Memoize formatAmount function
+  const formatAmount = useCallback((amount: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(amount)
+  }, [])
+
+  // Memoize handlers
+  const handleSchedulePayment = useCallback((billId: string) => {
+    console.log('Schedule payment for', billId)
+  }, [])
+
+  const handleViewBudgetDetails = useCallback(() => {
+    console.log('View budget details')
+  }, [])
+
+  const handleViewSavingsDetails = useCallback((category: string) => {
+    console.log('View savings details', category)
+  }, [])
+
+  const handleViewInvestmentOptions = useCallback(() => {
+    console.log('View investment options')
+  }, [])
+
+  const handleViewInvestmentDetails = useCallback((type: string) => {
+    console.log('View investment details', type)
+  }, [])
+
+  const fetchAnalyticsData = useCallback(async () => {
+    if (!user) {
+      console.error('No user found')
+      return
     }
-  }, [user])
 
-  const fetchScheduledPayments = async () => {
     try {
-      const paymentsRef = collection(db, 'scheduled_payments')
-      const q = query(
-        paymentsRef,
-        where('userId', '==', user?.uid),
-        where('status', '==', 'pending'),
-        orderBy('dueDate', 'asc')
-      )
-      const querySnapshot = await getDocs(q)
-      const payments = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Array<{
-        id: string;
-        description: string;
-        amount: number;
-        dueDate: string;
-      }>
-      setScheduledPayments(payments)
-    } catch (error) {
-      console.error('Error fetching scheduled payments:', error)
-    }
-  }
-
-  const fetchAnalyticsData = async () => {
-    try {
-      if (!user) {
-        console.error('No user found')
-        return
-      }
-
       setLoading(true)
 
       // Fetch transactions
@@ -244,7 +234,42 @@ export default function Analytics() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [user])
+
+  const fetchScheduledPayments = useCallback(async () => {
+    if (!user) return
+
+    try {
+      const paymentsRef = collection(db, 'scheduled_payments')
+      const q = query(
+        paymentsRef,
+        where('userId', '==', user.uid),
+        where('status', '==', 'pending'),
+        orderBy('dueDate', 'asc')
+      )
+      const querySnapshot = await getDocs(q)
+      const payments = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Array<{
+        id: string;
+        description: string;
+        amount: number;
+        dueDate: string;
+      }>
+      setScheduledPayments(payments)
+    } catch (error) {
+      console.error('Error fetching scheduled payments:', error)
+    }
+  }, [user])
+
+  // Fetch data when user changes
+  useEffect(() => {
+    if (user) {
+      fetchAnalyticsData()
+      fetchScheduledPayments()
+    }
+  }, [user, fetchAnalyticsData, fetchScheduledPayments])
 
   const processMonthlySpending = async (transactions: Transaction[]) => {
     const monthlyData = new Map<string, { spending: number; budget: number }>()
@@ -395,9 +420,9 @@ export default function Analytics() {
     return averageMonthlySpending * adjustmentFactor
   }
 
-  const generateProactiveSuggestions = async () => {
+  const generateProactiveSuggestions = useCallback(async () => {
     try {
-      if (!analyticsData || !settings?.monthlyBudget) {
+      if (!analyticsData || !settings?.monthlyBudget || !insights) {
         return
       }
 
@@ -429,7 +454,7 @@ export default function Analytics() {
           priority: 'high' as const,
           action: {
             text: 'Schedule Payment',
-            onClick: () => console.log('Schedule payment for', bill.id)
+            onClick: () => handleSchedulePayment(bill.id)
           }
         })),
 
@@ -443,7 +468,7 @@ export default function Analytics() {
           priority: 'high' as const,
           action: {
             text: 'View Budget Details',
-            onClick: () => console.log('View budget details')
+            onClick: handleViewBudgetDetails
           }
         }] : []),
 
@@ -457,7 +482,7 @@ export default function Analytics() {
           priority: (opportunity.potentialSavings > 100 ? 'high' : 'medium') as const,
           action: {
             text: 'See How to Save',
-            onClick: () => console.log('View savings details', opportunity.category)
+            onClick: () => handleViewSavingsDetails(opportunity.category)
           }
         }))
       ]
@@ -474,7 +499,7 @@ export default function Analytics() {
           priority: 'medium' as const,
           action: {
             text: 'View Investment Options',
-            onClick: () => console.log('View investment options')
+            onClick: handleViewInvestmentOptions
           }
         })
       }
@@ -491,7 +516,7 @@ export default function Analytics() {
             priority: (opportunity.riskLevel === 'low' ? 'medium' : 'high') as const,
             action: {
               text: 'Learn More',
-              onClick: () => console.log('View investment details', opportunity.type)
+              onClick: () => handleViewInvestmentDetails(opportunity.type)
             }
           })
         })
@@ -502,14 +527,14 @@ export default function Analytics() {
       console.error('Error generating proactive suggestions:', error)
       setProactiveSuggestions([])
     }
-  }
+  }, [analyticsData, settings?.monthlyBudget, insights, scheduledPayments, formatCurrency, handleSchedulePayment, handleViewBudgetDetails, handleViewSavingsDetails, handleViewInvestmentOptions, handleViewInvestmentDetails])
 
   // Call generateProactiveSuggestions when relevant data changes
   useEffect(() => {
     if (analyticsData && settings?.monthlyBudget && insights) {
       generateProactiveSuggestions()
     }
-  }, [analyticsData, settings?.monthlyBudget, insights, scheduledPayments])
+  }, [analyticsData, settings?.monthlyBudget, insights, scheduledPayments, generateProactiveSuggestions])
 
   if (loading) {
     return (
