@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { auth, db } from '@/lib/firebase/config'
 import { collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, doc, orderBy, limit } from 'firebase/firestore'
-import { getAuth } from 'firebase/auth'
+import { signInWithCustomToken } from 'firebase/auth'
 
 async function getCurrentUser(request: Request) {
   const authHeader = request.headers.get('authorization')
@@ -11,7 +11,7 @@ async function getCurrentUser(request: Request) {
 
   try {
     const token = authHeader.split('Bearer ')[1]
-    const userCredential = await auth.signInWithCustomToken(token)
+    const userCredential = await signInWithCustomToken(auth, token)
     return userCredential.user
   } catch (error) {
     console.error('Error verifying token:', error)
