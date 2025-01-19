@@ -1,6 +1,6 @@
-import { initializeApp, getApps } from 'firebase/app'
-import { getAuth, GoogleAuthProvider, browserLocalPersistence, setPersistence } from 'firebase/auth'
-import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore'
+import { initializeApp, getApps, getApp } from 'firebase/app'
+import { getAuth, GoogleAuthProvider, browserLocalPersistence } from 'firebase/auth'
+import { getFirestore, enableIndexedDbPersistence, doc, onSnapshot } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
 
 const firebaseConfig = {
@@ -13,7 +13,7 @@ const firebaseConfig = {
 }
 
 // Initialize Firebase
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0]
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApp()
 const auth = getAuth(app)
 
 // Initialize Firestore with persistence options
@@ -21,12 +21,6 @@ const db = getFirestore(app)
 
 // Initialize Storage
 const storage = getStorage(app)
-
-// Initialize Auth with persistence
-setPersistence(auth, browserLocalPersistence)
-  .catch((error) => {
-    console.error('Error setting auth persistence:', error)
-  })
 
 // Initialize Google Provider
 const googleProvider = new GoogleAuthProvider()
@@ -49,7 +43,21 @@ if (typeof window !== 'undefined') {
       console.warn('The current browser does not support persistence.')
     }
   })
+
+  // Add connection state listener
+  const connectedRef = doc(db, '.info/connected')
+  onSnapshot(connectedRef, (snap) => {
+    if (snap.data()?.connected === false) {
+      console.warn('Lost connection to Firestore. Some features may be limited.')
+    }
+  })
 }
+
+// Add auth state persistence
+auth.setPersistence(browserLocalPersistence)
+  .catch((error) => {
+    console.error('Auth persistence error:', error)
+  })
 
 // Security rules should be configured in Firebase Console, not in the client code
 // Removing client-side security rules as they should be managed in Firebase Console

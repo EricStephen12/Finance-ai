@@ -197,97 +197,13 @@ const fetchScheduledPayments = async (userId: string) => {
   }
 }
 
-const fetchAnalyticsData = useCallback(async () => {
-  if (!user?.uid) {
-    setError(null);
-    setLoading(false);
-    return;
-  }
-
-  try {
-    setLoading(true);
-
-    // First check if user has any data
-    const userDoc = await getDoc(doc(db, 'users', user.uid));
-    const userData = userDoc.data();
-    
-    if (!userData || !userData.hasCompletedOnboarding) {
-      // Show welcome state for new users
-      setAnalyticsData(null);
-      setMonthlySpending([]);
-      setSpendingByCategory([]);
-      setInsights({
-        spendingTrend: 0,
-        largestCategory: { category: '', amount: 0 },
-        budgetAdherence: 0,
-        predictedSpending: 0
-      });
-      setLoading(false);
-      return;
-    }
-
-    // Fetch all data in parallel with error handling
-    const [transactions, payments] = await Promise.all([
-      fetchTransactions(user.uid),
-      fetchScheduledPayments(user.uid)
-    ]);
-
-    // Process data even if some queries failed
-    const monthlySpendingData = await processMonthlySpending(transactions);
-    const spendingByCategoryData = await processSpendingByCategory(transactions);
-    const insightsData = await calculateInsights(transactions, spendingByCategoryData);
-
-    // Set data with fallbacks
-    setMonthlySpending(monthlySpendingData || []);
-    setSpendingByCategory(spendingByCategoryData || []);
-    setInsights(insightsData || {
-      spendingTrend: 0,
-      largestCategory: { category: '', amount: 0 },
-      budgetAdherence: 0,
-      predictedSpending: 0
-    });
-    setScheduledPayments(payments || []);
-    
-    // Update analytics data
-    setAnalyticsData({
-      monthlySpending: monthlySpendingData || [],
-      spendingByCategory: spendingByCategoryData || [],
-      insights: insightsData || {
-        spendingTrend: 0,
-        largestCategory: { category: '', amount: 0 },
-        budgetAdherence: 0,
-        predictedSpending: 0
-      },
-      aiRecommendations: {
-        spendingOptimizations: [],
-        investmentOpportunities: [],
-        budgetAdjustments: []
-      }
-    });
-
-  } catch (error) {
-    console.warn('Error in analytics data fetching, showing empty state:', error);
-    // Show empty state instead of error
-    setAnalyticsData(null);
-    setMonthlySpending([]);
-    setSpendingByCategory([]);
-    setInsights({
-      spendingTrend: 0,
-      largestCategory: { category: '', amount: 0 },
-      budgetAdherence: 0,
-      predictedSpending: 0
-    });
-  } finally {
-    setLoading(false);
-  }
-}, [user]);
-
 export default function Analytics() {
   const { user } = useAuth()
   const { settings, formatCurrency } = useSettings()
   const [loading, setLoading] = useState(true)
   const [timeframe, setTimeframe] = useState<'1M' | '3M' | '6M' | '1Y'>('1M')
   const [monthlySpending, setMonthlySpending] = useState<MonthlySpending[]>([])
+  const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null)
   const [spendingByCategory, setSpendingByCategory] = useState<SpendingByCategory[]>([])
   const [insights, setInsights] = useState<Insights>({
     spendingTrend: 0,
@@ -297,7 +213,6 @@ export default function Analytics() {
   })
   const [selectedChart, setSelectedChart] = useState<'area' | 'pie' | 'bar'>('area')
   const [focusArea, setFocusArea] = useState<'overview' | 'spending' | 'prediction'>('overview')
-  const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null)
   const [proactiveSuggestions, setProactiveSuggestions] = useState<ProactiveSuggestion[]>([])
   const [scheduledPayments, setScheduledPayments] = useState<Array<{
     id: string;
@@ -307,6 +222,105 @@ export default function Analytics() {
   }>>([])
   const [isInitialLoad, setIsInitialLoad] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  const fetchAnalyticsData = useCallback(async () => {
+    if (!user?.uid) {
+      // Reset states when no user
+      setAnalyticsData(null);
+      setMonthlySpending([]);
+      setSpendingByCategory([]);
+      setInsights({
+        spendingTrend: 0,
+        largestCategory: { category: '', amount: 0 },
+        budgetAdherence: 0,
+        predictedSpending: 0
+      });
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      // First check if user has any data
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      const userData = userDoc.data();
+      
+      if (!userData || !userData.hasCompletedOnboarding) {
+        // Show welcome state for new users
+        setAnalyticsData(null);
+        setMonthlySpending([]);
+        setSpendingByCategory([]);
+        setInsights({
+          spendingTrend: 0,
+          largestCategory: { category: '', amount: 0 },
+          budgetAdherence: 0,
+          predictedSpending: 0
+        });
+        setLoading(false);
+        return;
+      }
+
+      // Fetch all data in parallel with error handling
+      const [transactions, payments] = await Promise.all([
+        fetchTransactions(user.uid),
+        fetchScheduledPayments(user.uid)
+      ]);
+
+      // Process data even if some queries failed
+      const monthlySpendingData = await processMonthlySpending(transactions);
+      const spendingByCategoryData = await processSpendingByCategory(transactions);
+      const insightsData = await calculateInsights(transactions, spendingByCategoryData);
+
+      // Set data with fallbacks
+      setMonthlySpending(monthlySpendingData || []);
+      setSpendingByCategory(spendingByCategoryData || []);
+      setInsights(insightsData || {
+        spendingTrend: 0,
+        largestCategory: { category: '', amount: 0 },
+        budgetAdherence: 0,
+        predictedSpending: 0
+      });
+      setScheduledPayments(payments || []);
+      
+      // Update analytics data
+      setAnalyticsData({
+        monthlySpending: monthlySpendingData || [],
+        spendingByCategory: spendingByCategoryData || [],
+        insights: insightsData || {
+          spendingTrend: 0,
+          largestCategory: { category: '', amount: 0 },
+          budgetAdherence: 0,
+          predictedSpending: 0
+        },
+        aiRecommendations: {
+          spendingOptimizations: [],
+          investmentOpportunities: [],
+          budgetAdjustments: []
+        }
+      });
+
+    } catch (error) {
+      console.warn('Error in analytics data fetching, showing empty state:', error);
+      // Show empty state instead of error
+      setAnalyticsData(null);
+      setMonthlySpending([]);
+      setSpendingByCategory([]);
+      setInsights({
+        spendingTrend: 0,
+        largestCategory: { category: '', amount: 0 },
+        budgetAdherence: 0,
+        predictedSpending: 0
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    fetchAnalyticsData();
+  }, [fetchAnalyticsData]);
 
   // Memoize formatAmount function
   const formatAmount = useCallback((amount: number) => {
