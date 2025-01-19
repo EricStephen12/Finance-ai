@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth, db } from '@/lib/firebase/config'
+import { db } from '@/lib/firebase/config'
 import { collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, doc, orderBy, limit as limitQuery, Timestamp } from 'firebase/firestore'
+import { getAuth } from 'firebase-admin/auth'
+import '@/lib/firebase/admin' // Initialize Firebase Admin
 
 async function getCurrentUser(request: NextRequest) {
   const authHeader = request.headers.get('Authorization')
@@ -10,7 +12,8 @@ async function getCurrentUser(request: NextRequest) {
 
   const token = authHeader.split('Bearer ')[1]
   try {
-    const decodedToken = await auth.verifyIdToken(token)
+    const adminAuth = getAuth()
+    const decodedToken = await adminAuth.verifyIdToken(token)
     return decodedToken
   } catch (error) {
     throw new Error('Invalid authentication token')
