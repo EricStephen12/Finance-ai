@@ -1066,4 +1066,6 @@ export function UserFinancialInput({ isOnboarding = false, initialData, onComple
       </div>
     </div>
   );
-} 
+}
+
+export default UserFinancialInput; 

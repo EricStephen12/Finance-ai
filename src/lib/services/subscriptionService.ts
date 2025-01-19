@@ -140,4 +140,14 @@ export function getFeaturesList(tier: SubscriptionTier): string[] {
     'Goal Setting',
     'Budget Planning'
   ]
+}
+
+export async function getUserSubscriptionTier(userId: string): Promise<SubscriptionTier> {
+  const subscription = await getSubscription(userId);
+  return subscription?.tier || 'free';
+}
+
+export async function checkFeatureAccessForUser(userId: string, feature: keyof SubscriptionFeatures): Promise<boolean | string | number> {
+  const tier = await getUserSubscriptionTier(userId);
+  return canAccessFeature(tier, feature);
 } 
