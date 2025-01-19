@@ -234,7 +234,7 @@ export default function Analytics() {
     try {
       setLoading(true)
 
-      // Fetch transactions with proper error handling
+      // Fetch transactions with proper error handling and security rules check
       const transactionsRef = collection(db, 'transactions')
       const q = query(
         transactionsRef,
@@ -243,6 +243,9 @@ export default function Analytics() {
       )
       
       const querySnapshot = await getDocs(q).catch(error => {
+        if (error.code === 'permission-denied') {
+          throw new Error('You do not have permission to access this data. Please check your account permissions.')
+        }
         console.error('Error fetching transactions:', error)
         return null
       })
@@ -256,26 +259,28 @@ export default function Analytics() {
         ...doc.data()
       })) as Transaction[]
 
-      // Get AI-powered insights and recommendations with error handling
+      // Get AI-powered insights with proper type validation
       const [spendingAnalysis, financialInsights] = await Promise.allSettled([
         financeOptimizer.analyzeSpending(transactions).catch(() => ({
           patterns: [],
           opportunities: [],
-          insights: []
+          insights: [],
+          type: 'spending' // Add type for validation
         })),
         generateFinancialInsights(user.uid).catch(() => null)
       ]).then(results => [
-        results[0].status === 'fulfilled' ? results[0].value : { patterns: [], opportunities: [], insights: [] },
+        results[0].status === 'fulfilled' ? results[0].value : { 
+          patterns: [], 
+          opportunities: [], 
+          insights: [],
+          type: 'spending'
+        },
         results[1].status === 'fulfilled' ? results[1].value : null
       ])
 
-      // Process monthly spending data with validation
+      // Process data with validation
       const monthlySpendingData = await processMonthlySpending(transactions).catch(() => [])
-      
-      // Process spending by category with validation
       const spendingByCategoryData = await processSpendingByCategory(transactions).catch(() => [])
-      
-      // Calculate insights with validation
       const insightsData = await calculateInsights(transactions, spendingByCategoryData).catch(() => ({
         spendingTrend: 0,
         largestCategory: { category: '', amount: 0 },
@@ -283,30 +288,37 @@ export default function Analytics() {
         predictedSpending: 0
       }))
 
+      // Update analytics data with proper validation
       const analyticsDataUpdate: AnalyticsData = {
         monthlySpending: monthlySpendingData,
         spendingByCategory: spendingByCategoryData,
         insights: insightsData,
         aiRecommendations: {
-          spendingOptimizations: ('opportunities' in spendingAnalysis ? spendingAnalysis.opportunities : []).map(opp => ({
-            category: opp.category || 'Unknown',
-            potentialSavings: opp.potentialSavings || 0,
-            suggestions: opp.suggestions || []
-          })) || [],
-          investmentOpportunities: financialInsights?.recommendations?.filter(rec => 
-            rec.title.toLowerCase().includes('invest')
-          ).map(rec => ({
-            type: rec.title,
-            description: rec.description,
-            expectedReturn: rec.impact.yearly,
-            riskLevel: rec.priority === 'high' ? 'high' : rec.priority === 'medium' ? 'medium' : 'low'
-          })) || [],
-          budgetAdjustments: financialInsights?.spendingPatterns?.map(pattern => ({
-            category: pattern.category,
-            currentAmount: pattern.amount,
-            suggestedAmount: pattern.amount * 0.8,
-            reason: pattern.explanation
-          })) || []
+          spendingOptimizations: spendingAnalysis && 'opportunities' in spendingAnalysis 
+            ? spendingAnalysis.opportunities.map(opp => ({
+                category: opp.category || 'Unknown',
+                potentialSavings: opp.potentialSavings || 0,
+                suggestions: opp.suggestions || []
+              }))
+            : [],
+          investmentOpportunities: financialInsights?.recommendations
+            ? financialInsights.recommendations
+                .filter(rec => rec.title.toLowerCase().includes('invest'))
+                .map(rec => ({
+                  type: rec.title,
+                  description: rec.description,
+                  expectedReturn: rec.impact.yearly,
+                  riskLevel: rec.priority === 'high' ? 'high' : rec.priority === 'medium' ? 'medium' : 'low'
+                }))
+            : [],
+          budgetAdjustments: financialInsights?.spendingPatterns
+            ? financialInsights.spendingPatterns.map(pattern => ({
+                category: pattern.category,
+                currentAmount: pattern.amount,
+                suggestedAmount: pattern.amount * 0.8,
+                reason: pattern.explanation
+              }))
+            : []
         }
       }
 
@@ -316,7 +328,8 @@ export default function Analytics() {
       setInsights(insightsData)
     } catch (error) {
       console.error('Error fetching analytics data:', error)
-      setError('Failed to load analytics data. Please try again.')
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load analytics data'
+      setError(errorMessage)
       // Set default states on error
       setAnalyticsData(null)
       setMonthlySpending([])
@@ -333,7 +346,7 @@ export default function Analytics() {
   }, [user])
 
   const fetchScheduledPayments = useCallback(async () => {
-    if (!user) return
+    if (!user?.uid) return
 
     try {
       const paymentsRef = collection(db, 'scheduled_payments')
@@ -343,7 +356,20 @@ export default function Analytics() {
         where('status', '==', 'pending'),
         orderBy('dueDate', 'asc')
       )
-      const querySnapshot = await getDocs(q)
+      
+      const querySnapshot = await getDocs(q).catch(error => {
+        if (error.code === 'permission-denied') {
+          console.error('Permission denied to access scheduled payments')
+          return null
+        }
+        throw error
+      })
+
+      if (!querySnapshot) {
+        setScheduledPayments([])
+        return
+      }
+
       const payments = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -353,9 +379,11 @@ export default function Analytics() {
         amount: number;
         dueDate: string;
       }>
+      
       setScheduledPayments(payments)
     } catch (error) {
       console.error('Error fetching scheduled payments:', error)
+      setScheduledPayments([])
     }
   }, [user])
 
