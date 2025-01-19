@@ -276,13 +276,25 @@ export default function Analytics() {
         spendingByCategory: spendingByCategoryData,
         insights: insightsData,
         aiRecommendations: {
-          spendingOptimizations: spendingAnalysis?.opportunities?.map(opp => ({
+          spendingOptimizations: ('opportunities' in spendingAnalysis ? spendingAnalysis.opportunities : []).map(opp => ({
             category: opp.category || 'Unknown',
             potentialSavings: opp.potentialSavings || 0,
             suggestions: opp.suggestions || []
           })) || [],
-          investmentOpportunities: [], 
-          budgetAdjustments: []
+          investmentOpportunities: financialInsights?.recommendations?.filter(rec => 
+            rec.title.toLowerCase().includes('invest')
+          ).map(rec => ({
+            type: rec.title,
+            description: rec.description,
+            expectedReturn: rec.impact.yearly,
+            riskLevel: rec.priority === 'high' ? 'high' : rec.priority === 'medium' ? 'medium' : 'low'
+          })) || [],
+          budgetAdjustments: financialInsights?.spendingPatterns?.map(pattern => ({
+            category: pattern.category,
+            currentAmount: pattern.amount,
+            suggestedAmount: pattern.amount * 0.8,
+            reason: pattern.explanation
+          })) || []
         }
       }
 
