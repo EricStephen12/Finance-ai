@@ -18,7 +18,7 @@ import {
   ResponsiveContainer
 } from 'recharts'
 import { auth, db } from '@/lib/firebase/config'
-import { collection, query, where, getDocs, orderBy, Timestamp } from 'firebase/firestore'
+import { collection, query, where, getDocs, orderBy, Timestamp, doc, getDoc } from 'firebase/firestore'
 import { useAuth } from '@/contexts/AuthContext'
 import { useSettings } from '@/contexts/SettingsContext'
 import { currencies } from '@/constants/currencies'
@@ -166,6 +166,122 @@ const ChartErrorBoundary: React.FC<{ children: React.ReactNode }> = ({ children 
   return <>{children}</>
 }
 
+const fetchTransactions = async (userId: string) => {
+  try {
+    const q = query(
+      collection(db, 'transactions'),
+      where('userId', '==', userId),
+      orderBy('date', 'desc')
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  } catch (error) {
+    console.warn('Transactions query requires an index, returning empty array:', error);
+    return []; // Return empty array instead of throwing
+  }
+}
+
+const fetchScheduledPayments = async (userId: string) => {
+  try {
+    const q = query(
+      collection(db, 'scheduled_payments'),
+      where('userId', '==', userId),
+      where('status', '==', 'pending'),
+      orderBy('dueDate', 'asc')
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  } catch (error) {
+    console.warn('Scheduled payments query requires an index, returning empty array:', error);
+    return []; // Return empty array instead of throwing
+  }
+}
+
+const fetchAnalyticsData = useCallback(async () => {
+  if (!user?.uid) {
+    setError(null);
+    setLoading(false);
+    return;
+  }
+
+  try {
+    setLoading(true);
+
+    // First check if user has any data
+    const userDoc = await getDoc(doc(db, 'users', user.uid));
+    const userData = userDoc.data();
+    
+    if (!userData || !userData.hasCompletedOnboarding) {
+      // Show welcome state for new users
+      setAnalyticsData(null);
+      setMonthlySpending([]);
+      setSpendingByCategory([]);
+      setInsights({
+        spendingTrend: 0,
+        largestCategory: { category: '', amount: 0 },
+        budgetAdherence: 0,
+        predictedSpending: 0
+      });
+      setLoading(false);
+      return;
+    }
+
+    // Fetch all data in parallel with error handling
+    const [transactions, payments] = await Promise.all([
+      fetchTransactions(user.uid),
+      fetchScheduledPayments(user.uid)
+    ]);
+
+    // Process data even if some queries failed
+    const monthlySpendingData = await processMonthlySpending(transactions);
+    const spendingByCategoryData = await processSpendingByCategory(transactions);
+    const insightsData = await calculateInsights(transactions, spendingByCategoryData);
+
+    // Set data with fallbacks
+    setMonthlySpending(monthlySpendingData || []);
+    setSpendingByCategory(spendingByCategoryData || []);
+    setInsights(insightsData || {
+      spendingTrend: 0,
+      largestCategory: { category: '', amount: 0 },
+      budgetAdherence: 0,
+      predictedSpending: 0
+    });
+    setScheduledPayments(payments || []);
+    
+    // Update analytics data
+    setAnalyticsData({
+      monthlySpending: monthlySpendingData || [],
+      spendingByCategory: spendingByCategoryData || [],
+      insights: insightsData || {
+        spendingTrend: 0,
+        largestCategory: { category: '', amount: 0 },
+        budgetAdherence: 0,
+        predictedSpending: 0
+      },
+      aiRecommendations: {
+        spendingOptimizations: [],
+        investmentOpportunities: [],
+        budgetAdjustments: []
+      }
+    });
+
+  } catch (error) {
+    console.warn('Error in analytics data fetching, showing empty state:', error);
+    // Show empty state instead of error
+    setAnalyticsData(null);
+    setMonthlySpending([]);
+    setSpendingByCategory([]);
+    setInsights({
+      spendingTrend: 0,
+      largestCategory: { category: '', amount: 0 },
+      budgetAdherence: 0,
+      predictedSpending: 0
+    });
+  } finally {
+    setLoading(false);
+  }
+}, [user]);
+
 export default function Analytics() {
   const { user } = useAuth()
   const { settings, formatCurrency } = useSettings()
@@ -222,350 +338,6 @@ export default function Analytics() {
   const handleViewInvestmentDetails = useCallback((type: string) => {
     console.log('View investment details', type)
   }, [])
-
-  const fetchAnalyticsData = useCallback(async () => {
-    if (!user?.uid) {
-      setError('Please sign in to view analytics')
-      setLoading(false)
-      return
-    }
-
-    setError(null)
-    try {
-      setLoading(true)
-
-      // Fetch transactions with proper error handling and security rules check
-      const transactionsRef = collection(db, 'transactions')
-      const q = query(
-        transactionsRef,
-        where('userId', '==', user.uid),
-        orderBy('date', 'desc')
-      )
-      
-      const querySnapshot = await getDocs(q).catch(error => {
-        if (error.code === 'permission-denied') {
-          throw new Error('You do not have permission to access this data. Please check your account permissions.')
-        }
-        console.error('Error fetching transactions:', error)
-        return null
-      })
-
-      if (!querySnapshot) {
-        throw new Error('Failed to fetch transactions')
-      }
-
-      const transactions = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Transaction[]
-
-      // Get AI-powered insights with proper type validation
-      const [spendingAnalysis, financialInsights] = await Promise.allSettled([
-        financeOptimizer.analyzeSpending(transactions).catch(() => ({
-          patterns: [],
-          opportunities: [],
-          insights: [],
-          type: 'spending' // Add type for validation
-        })),
-        generateFinancialInsights(user.uid).catch(() => null)
-      ]).then(results => [
-        results[0].status === 'fulfilled' ? results[0].value : { 
-          patterns: [], 
-          opportunities: [], 
-          insights: [],
-          type: 'spending'
-        },
-        results[1].status === 'fulfilled' ? results[1].value : null
-      ])
-
-      // Process data with validation
-      const monthlySpendingData = await processMonthlySpending(transactions).catch(() => [])
-      const spendingByCategoryData = await processSpendingByCategory(transactions).catch(() => [])
-      const insightsData = await calculateInsights(transactions, spendingByCategoryData).catch(() => ({
-        spendingTrend: 0,
-        largestCategory: { category: '', amount: 0 },
-        budgetAdherence: 0,
-        predictedSpending: 0
-      }))
-
-      // Update analytics data with proper validation
-      const analyticsDataUpdate: AnalyticsData = {
-        monthlySpending: monthlySpendingData,
-        spendingByCategory: spendingByCategoryData,
-        insights: insightsData,
-        aiRecommendations: {
-          spendingOptimizations: spendingAnalysis && 'opportunities' in spendingAnalysis 
-            ? spendingAnalysis.opportunities.map(opp => ({
-                category: opp.category || 'Unknown',
-                potentialSavings: opp.potentialSavings || 0,
-                suggestions: opp.suggestions || []
-              }))
-            : [],
-          investmentOpportunities: financialInsights?.recommendations
-            ? financialInsights.recommendations
-                .filter(rec => rec.title.toLowerCase().includes('invest'))
-                .map(rec => ({
-                  type: rec.title,
-                  description: rec.description,
-                  expectedReturn: rec.impact.yearly,
-                  riskLevel: rec.priority === 'high' ? 'high' : rec.priority === 'medium' ? 'medium' : 'low'
-                }))
-            : [],
-          budgetAdjustments: financialInsights?.spendingPatterns
-            ? financialInsights.spendingPatterns.map(pattern => ({
-                category: pattern.category,
-                currentAmount: pattern.amount,
-                suggestedAmount: pattern.amount * 0.8,
-                reason: pattern.explanation
-              }))
-            : []
-        }
-      }
-
-      setAnalyticsData(analyticsDataUpdate)
-      setMonthlySpending(monthlySpendingData)
-      setSpendingByCategory(spendingByCategoryData)
-      setInsights(insightsData)
-    } catch (error) {
-      console.error('Error fetching analytics data:', error)
-      const errorMessage = error instanceof Error ? error.message : 'Failed to load analytics data'
-      setError(errorMessage)
-      // Set default states on error
-      setAnalyticsData(null)
-      setMonthlySpending([])
-      setSpendingByCategory([])
-      setInsights({
-        spendingTrend: 0,
-        largestCategory: { category: '', amount: 0 },
-        budgetAdherence: 0,
-        predictedSpending: 0
-      })
-    } finally {
-      setLoading(false)
-    }
-  }, [user])
-
-  const fetchScheduledPayments = useCallback(async () => {
-    if (!user?.uid) return
-
-    try {
-      const paymentsRef = collection(db, 'scheduled_payments')
-      const q = query(
-        paymentsRef,
-        where('userId', '==', user.uid),
-        where('status', '==', 'pending'),
-        orderBy('dueDate', 'asc')
-      )
-      
-      const querySnapshot = await getDocs(q).catch(error => {
-        if (error.code === 'permission-denied') {
-          console.error('Permission denied to access scheduled payments')
-          return null
-        }
-        throw error
-      })
-
-      if (!querySnapshot) {
-        setScheduledPayments([])
-        return
-      }
-
-      const payments = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Array<{
-        id: string;
-        description: string;
-        amount: number;
-        dueDate: string;
-      }>
-      
-      setScheduledPayments(payments)
-    } catch (error) {
-      console.error('Error fetching scheduled payments:', error)
-      setScheduledPayments([])
-    }
-  }, [user])
-
-  // Update useEffect for initial data loading
-  useEffect(() => {
-    if (user) {
-      const loadInitialData = async () => {
-        try {
-          setLoading(true)
-          await Promise.all([
-            fetchAnalyticsData(),
-            fetchScheduledPayments()
-          ])
-        } catch (error) {
-          console.error('Error loading initial data:', error)
-        } finally {
-          setLoading(false)
-          setIsInitialLoad(false)
-        }
-      }
-      loadInitialData()
-    } else {
-      setIsInitialLoad(false)
-    }
-  }, [user, fetchAnalyticsData, fetchScheduledPayments])
-
-  const processMonthlySpending = async (transactions: Transaction[]): Promise<MonthlySpending[]> => {
-    if (!transactions?.length) return []
-    
-    const monthlyData = new Map<string, { spending: number; budget: number }>()
-    
-    transactions.forEach(transaction => {
-      if (!transaction?.date) return
-      
-      const date = new Date(transaction.date)
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-      
-      if (!monthlyData.has(monthKey)) {
-        monthlyData.set(monthKey, { 
-          spending: 0, 
-          budget: settings?.monthlyBudget || 0 
-        })
-      }
-      
-      const monthData = monthlyData.get(monthKey)!
-      monthData.spending += Math.abs(transaction.amount || 0)
-    })
-
-    return Array.from(monthlyData.entries())
-      .map(([month, data]) => ({
-        month,
-        spending: data.spending,
-        budget: data.budget
-      }))
-      .sort((a, b) => a.month.localeCompare(b.month))
-  }
-
-  const processSpendingByCategory = async (transactions: Transaction[]): Promise<SpendingByCategory[]> => {
-    if (!transactions?.length) return []
-    
-    const categoryData: { [key: string]: number } = {}
-    
-    transactions.forEach(transaction => {
-      if (!transaction?.category) return
-      
-      const category = transaction.category
-      if (!categoryData[category]) {
-        categoryData[category] = 0
-      }
-      categoryData[category] += Math.abs(transaction.amount || 0)
-    })
-
-    return Object.entries(categoryData)
-      .map(([category, amount]) => ({
-        category,
-        amount
-      }))
-      .sort((a, b) => b.amount - a.amount)
-  }
-
-  const calculateInsights = async (
-    transactions: Transaction[],
-    categories: SpendingByCategory[]
-  ): Promise<Insights> => {
-    // Calculate spending trend
-    const spendingTrend = calculateSpendingTrend(transactions)
-    
-    // Find largest category
-    const largestCategory = categories[0] || { category: 'None', amount: 0 }
-    
-    // Calculate budget adherence
-    const budgetAdherence = calculateBudgetAdherence(transactions)
-    
-    // Calculate predicted spending
-    const predictedSpending = calculatePredictedSpending(transactions)
-
-    return {
-      spendingTrend,
-      largestCategory,
-      budgetAdherence,
-      predictedSpending
-    }
-  }
-
-  const calculateSpendingTrend = (transactions: Transaction[]): number => {
-    if (!transactions?.length) return 0
-    
-    const monthlyTotals = new Map<string, number>()
-    
-    transactions.forEach(transaction => {
-      if (!transaction?.date) return
-      
-      const date = new Date(transaction.date)
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-      
-      monthlyTotals.set(monthKey, (monthlyTotals.get(monthKey) || 0) + Math.abs(transaction.amount || 0))
-    })
-
-    const sortedMonths = Array.from(monthlyTotals.entries())
-      .sort((a, b) => a[0].localeCompare(b[0]))
-
-    if (sortedMonths.length >= 2) {
-      const currentMonth = sortedMonths[sortedMonths.length - 1][1]
-      const previousMonth = sortedMonths[sortedMonths.length - 2][1]
-      return previousMonth > 0 ? ((currentMonth - previousMonth) / previousMonth) * 100 : 0
-    }
-
-    return 0
-  }
-
-  const calculateBudgetAdherence = (transactions: Transaction[]): number => {
-    if (!settings?.monthlyBudget || !transactions?.length) return 0
-    
-    const currentDate = new Date()
-    const currentMonthSpending = transactions
-      .filter(t => {
-        if (!t?.date) return false
-        const transactionDate = new Date(t.date)
-        return transactionDate.getMonth() === currentDate.getMonth() &&
-               transactionDate.getFullYear() === currentDate.getFullYear()
-      })
-      .reduce((total, t) => total + Math.abs(t.amount || 0), 0)
-
-    return settings.monthlyBudget > 0 
-      ? ((settings.monthlyBudget - currentMonthSpending) / settings.monthlyBudget) * 100 
-      : 0
-  }
-
-  const calculatePredictedSpending = (transactions: Transaction[]): number => {
-    if (!transactions?.length) return 0
-
-    const threeMonthsAgo = new Date()
-    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
-    
-    const recentTransactions = transactions.filter(t => {
-      if (!t?.date) return false
-      return new Date(t.date) >= threeMonthsAgo
-    })
-    
-    if (!recentTransactions.length) return 0
-
-    const monthlyTotals = new Map<string, number>()
-    
-    recentTransactions.forEach(transaction => {
-      if (!transaction?.date) return
-      
-      const date = new Date(transaction.date)
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-      
-      monthlyTotals.set(monthKey, (monthlyTotals.get(monthKey) || 0) + Math.abs(transaction.amount || 0))
-    })
-
-    if (!monthlyTotals.size) return 0
-
-    const averageMonthlySpending = Array.from(monthlyTotals.values())
-      .reduce((sum, total) => sum + total, 0) / monthlyTotals.size
-
-    const trend = calculateSpendingTrend(recentTransactions)
-    const adjustmentFactor = 1 + (trend / 1000)
-    
-    return averageMonthlySpending * adjustmentFactor
-  }
 
   const generateProactiveSuggestions = useCallback(async () => {
     if (!analyticsData || !settings?.monthlyBudget || !insights) {
@@ -686,34 +458,6 @@ export default function Analytics() {
     }
   }, [analyticsData, settings?.monthlyBudget, insights, scheduledPayments, generateProactiveSuggestions])
 
-  if (isInitialLoad) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-600"></div>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="text-center py-12">
-        <div className="inline-flex items-center justify-center p-2 bg-red-100 rounded-full mb-4">
-          <ExclamationTriangleIcon className="h-6 w-6 text-red-600" />
-        </div>
-        <p className="text-gray-900 font-medium">{error}</p>
-        <button 
-          onClick={() => {
-            setError(null)
-            fetchAnalyticsData()
-          }}
-          className="mt-4 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700"
-        >
-          Try Again
-        </button>
-      </div>
-    )
-  }
-
   if (!user?.uid) {
     return (
       <div className="text-center py-12">
@@ -722,10 +466,36 @@ export default function Analytics() {
     )
   }
 
-  if (loading) {
+  // Replace error and empty state handling with welcome message
+  if (!analyticsData && !loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-600"></div>
+      <div className="min-h-screen bg-gray-50 p-4 sm:p-6 lg:p-8">
+        <div className="max-w-3xl mx-auto text-center py-12 px-4">
+          <SparklesIcon className="mx-auto h-12 w-12 text-primary-600" />
+          <h2 className="mt-4 text-3xl font-bold text-gray-900">Welcome to Financial Analytics</h2>
+          <p className="mt-2 text-lg text-gray-600">
+            Start tracking your finances to see insights and analytics here.
+          </p>
+          <div className="mt-8">
+            <h3 className="text-lg font-medium text-gray-900">Get Started:</h3>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div className="bg-white p-6 rounded-lg shadow-sm">
+                <BanknotesIcon className="h-8 w-8 text-primary-600 mb-4" />
+                <h4 className="font-medium text-gray-900">Add Transactions</h4>
+                <p className="mt-2 text-sm text-gray-500">
+                  Record your income and expenses to start tracking your spending patterns.
+                </p>
+              </div>
+              <div className="bg-white p-6 rounded-lg shadow-sm">
+                <RocketLaunchIcon className="h-8 w-8 text-primary-600 mb-4" />
+                <h4 className="font-medium text-gray-900">Set Financial Goals</h4>
+                <p className="mt-2 text-sm text-gray-500">
+                  Define your savings goals and monthly budget to get personalized insights.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     )
   }

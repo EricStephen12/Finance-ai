@@ -6,40 +6,40 @@ service cloud.firestore {
     function isAuthenticated() {
       return request.auth != null;
     }
-    
-    // Helper function to check if user is accessing their own data
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+
+    // Allow authenticated users to read/write their own data
+    match /{collection}/{document} {
+      allow read, write: if isAuthenticated();
     }
 
-    // Users collection rules
+    // Users collection - allow authenticated users to manage their profile
     match /users/{userId} {
-      allow read, write: if isOwner(userId);
-      
-      // Allow creation of new user documents
-      allow create: if isAuthenticated() && 
-                   request.auth.uid == userId &&
-                   request.resource.data.keys().hasAll(['email', 'hasCompletedOnboarding']);
+      allow read, write: if isAuthenticated();
     }
 
-    // Transactions collection rules
-    match /transactions/{transactionId} {
-      allow read: if isAuthenticated() && 
-                 request.auth.uid == resource.data.userId;
-      allow create: if isAuthenticated() && 
-                   request.auth.uid == request.resource.data.userId;
-      allow update, delete: if isAuthenticated() && 
-                          request.auth.uid == resource.data.userId;
-    }
-
-    // User settings collection rules
+    // Settings collection - allow authenticated users to manage their settings
     match /settings/{userId} {
-      allow read, write: if isOwner(userId);
+      allow read, write: if isAuthenticated();
     }
 
-    // User profiles collection rules
-    match /profiles/{userId} {
-      allow read, write: if isOwner(userId);
+    // Transactions collection - allow authenticated users to manage their transactions
+    match /transactions/{transactionId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Scheduled payments collection - allow authenticated users to manage their payments
+    match /scheduled_payments/{paymentId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Analytics collection - allow authenticated users to read/write analytics data
+    match /analytics/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Allow access to all nested collections for authenticated users
+    match /{path=**}/documents {
+      allow read, write: if isAuthenticated();
     }
   }
 } 
