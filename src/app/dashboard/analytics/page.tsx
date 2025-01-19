@@ -421,12 +421,12 @@ export default function Analytics() {
         // Upcoming bills notifications
         ...upcomingBills.map(bill => ({
           id: `bill-${bill.id}`,
-          type: 'bill',
+          type: 'bill' as const,
           title: 'Upcoming Bill',
           description: `${bill.description} due in ${Math.ceil((new Date(bill.dueDate).getTime() - new Date().getTime()) / (1000 * 3600 * 24))} days`,
           impact: bill.amount,
           dueDate: bill.dueDate,
-          priority: 'high',
+          priority: 'high' as const,
           action: {
             text: 'Schedule Payment',
             onClick: () => console.log('Schedule payment for', bill.id)
@@ -436,11 +436,11 @@ export default function Analytics() {
         // Potential shortage warning
         ...(potentialShortage ? [{
           id: 'shortage-warning',
-          type: 'shortage',
+          type: 'shortage' as const,
           title: 'Potential Budget Shortage',
           description: `Based on your spending patterns, you might exceed your monthly budget by ${formatCurrency(predictedExpenses - monthlyIncome)}`,
           impact: predictedExpenses - monthlyIncome,
-          priority: 'high',
+          priority: 'high' as const,
           action: {
             text: 'View Budget Details',
             onClick: () => console.log('View budget details')
@@ -450,11 +450,11 @@ export default function Analytics() {
         // Savings opportunities
         ...savingsOpportunities.map(opportunity => ({
           id: `saving-${opportunity.category}`,
-          type: 'saving',
+          type: 'saving' as const,
           title: `Savings Opportunity in ${opportunity.category}`,
           description: opportunity.suggestions[0],
           impact: opportunity.potentialSavings,
-          priority: opportunity.potentialSavings > 100 ? 'high' : 'medium',
+          priority: (opportunity.potentialSavings > 100 ? 'high' : 'medium') as const,
           action: {
             text: 'See How to Save',
             onClick: () => console.log('View savings details', opportunity.category)
@@ -467,11 +467,11 @@ export default function Analytics() {
         const investmentAmount = insights.predictedSpending * (insights.budgetAdherence / 100)
         suggestions.push({
           id: 'investment-opportunity',
-          type: 'investment',
+          type: 'investment' as const,
           title: 'Investment Opportunity',
           description: `You're ${insights.budgetAdherence.toFixed(1)}% under budget. Consider investing the surplus of ${formatCurrency(investmentAmount)} for better returns.`,
           impact: investmentAmount,
-          priority: 'medium',
+          priority: 'medium' as const,
           action: {
             text: 'View Investment Options',
             onClick: () => console.log('View investment options')
@@ -484,11 +484,11 @@ export default function Analytics() {
         analyticsData.aiRecommendations.investmentOpportunities.forEach(opportunity => {
           suggestions.push({
             id: `investment-${opportunity.type}`,
-            type: 'investment',
+            type: 'investment' as const,
             title: opportunity.type,
             description: opportunity.description,
             impact: opportunity.expectedReturn,
-            priority: opportunity.riskLevel === 'low' ? 'medium' : 'high',
+            priority: (opportunity.riskLevel === 'low' ? 'medium' : 'high') as const,
             action: {
               text: 'Learn More',
               onClick: () => console.log('View investment details', opportunity.type)
