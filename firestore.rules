@@ -1,0 +1,45 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if user is accessing their own data
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Users collection rules
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+      
+      // Allow creation of new user documents
+      allow create: if isAuthenticated() && 
+                   request.auth.uid == userId &&
+                   request.resource.data.keys().hasAll(['email', 'hasCompletedOnboarding']);
+    }
+
+    // Transactions collection rules
+    match /transactions/{transactionId} {
+      allow read: if isAuthenticated() && 
+                 request.auth.uid == resource.data.userId;
+      allow create: if isAuthenticated() && 
+                   request.auth.uid == request.resource.data.userId;
+      allow update, delete: if isAuthenticated() && 
+                          request.auth.uid == resource.data.userId;
+    }
+
+    // User settings collection rules
+    match /settings/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // User profiles collection rules
+    match /profiles/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+  }
+} 
