@@ -22,6 +22,7 @@ import { collection, query, where, getDocs, orderBy, Timestamp } from 'firebase/
 import { useAuth } from '@/contexts/AuthContext'
 import { useSettings } from '@/contexts/SettingsContext'
 import { currencies } from '@/constants/currencies'
+import type { Transaction } from '@/types/database'
 import { 
   ChartBarIcon, 
   ArrowTrendingUpIcon, 
@@ -129,7 +130,7 @@ const formatAmount = (amount: number) => {
 
 export default function Analytics() {
   const { user } = useAuth()
-  const { settings } = useSettings()
+  const { settings, formatCurrency } = useSettings()
   const [loading, setLoading] = useState(true)
   const [timeframe, setTimeframe] = useState<'1M' | '3M' | '6M' | '1Y'>('1M')
   const [monthlySpending, setMonthlySpending] = useState<MonthlySpending[]>([])
@@ -142,16 +143,46 @@ export default function Analytics() {
   })
   const [selectedChart, setSelectedChart] = useState<'area' | 'pie'>('area')
   const [focusArea, setFocusArea] = useState<'overview' | 'spending' | 'prediction'>('overview')
-  const { formatCurrency, convertCurrency } = useSettings()
   const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null)
   const [proactiveSuggestions, setProactiveSuggestions] = useState<ProactiveSuggestion[]>([])
+  const [scheduledPayments, setScheduledPayments] = useState<Array<{
+    id: string;
+    description: string;
+    amount: number;
+    dueDate: string;
+  }>>([])
 
   useEffect(() => {
     if (user) {
-    fetchAnalyticsData()
-      generateProactiveSuggestions()
+      fetchAnalyticsData()
+      fetchScheduledPayments()
     }
   }, [user])
+
+  const fetchScheduledPayments = async () => {
+    try {
+      const paymentsRef = collection(db, 'scheduled_payments')
+      const q = query(
+        paymentsRef,
+        where('userId', '==', user?.uid),
+        where('status', '==', 'pending'),
+        orderBy('dueDate', 'asc')
+      )
+      const querySnapshot = await getDocs(q)
+      const payments = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Array<{
+        id: string;
+        description: string;
+        amount: number;
+        dueDate: string;
+      }>
+      setScheduledPayments(payments)
+    } catch (error) {
+      console.error('Error fetching scheduled payments:', error)
+    }
+  }
 
   const fetchAnalyticsData = async () => {
     try {
@@ -218,17 +249,20 @@ export default function Analytics() {
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
       
       if (!monthlyData.has(monthKey)) {
-        monthlyData.set(monthKey, { spending: 0, budget: settings?.monthlyBudget || 0 })
+        monthlyData.set(monthKey, { 
+          spending: 0, 
+          budget: settings?.monthlyBudget || 0 
+        })
       }
       
       const monthData = monthlyData.get(monthKey)!
-      monthData.spending += transaction.amount
+      monthData.spending += Math.abs(transaction.amount)
     })
 
     return Array.from(monthlyData.entries())
       .map(([month, data]) => ({
         month,
-        spending: Math.abs(data.spending),
+        spending: data.spending,
         budget: data.budget
       }))
       .sort((a, b) => a.month.localeCompare(b.month))
@@ -306,23 +340,36 @@ export default function Analytics() {
   const calculateBudgetAdherence = (transactions: Transaction[]): number => {
     if (!settings?.monthlyBudget) return 0
     
-    const currentMonth = new Date().getMonth()
-    const currentYear = new Date().getFullYear()
-    
-    const monthlyTotal = transactions
-      .filter(transaction => {
-        const date = new Date(transaction.date)
-        return date.getMonth() === currentMonth && date.getFullYear() === currentYear
+    // Calculate total spending for the current month
+    const currentDate = new Date()
+    const currentMonthSpending = transactions
+      .filter(t => {
+        const transactionDate = new Date(t.date)
+        return transactionDate.getMonth() === currentDate.getMonth() &&
+               transactionDate.getFullYear() === currentDate.getFullYear()
       })
-      .reduce((total, transaction) => total + Math.abs(transaction.amount), 0)
+      .reduce((total, t) => total + Math.abs(t.amount), 0)
 
-    return ((settings.monthlyBudget - monthlyTotal) / settings.monthlyBudget) * 100
+    // Calculate the percentage difference from budget
+    // Negative value means over budget, positive means under budget
+    return ((settings.monthlyBudget - currentMonthSpending) / settings.monthlyBudget) * 100
   }
 
   const calculatePredictedSpending = (transactions: Transaction[]): number => {
+    if (transactions.length === 0) return 0
+
+    // Get transactions from the last 3 months
+    const threeMonthsAgo = new Date()
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
+    
+    const recentTransactions = transactions.filter(t => new Date(t.date) >= threeMonthsAgo)
+    
+    if (recentTransactions.length === 0) return 0
+
+    // Calculate average monthly spending
     const monthlyTotals = new Map<string, number>()
     
-    transactions.forEach(transaction => {
+    recentTransactions.forEach(transaction => {
       const date = new Date(transaction.date)
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
       
@@ -330,31 +377,40 @@ export default function Analytics() {
         monthlyTotals.set(monthKey, 0)
       }
       
-      const currentTotal = monthlyTotals.get(monthKey) || 0
-      monthlyTotals.set(monthKey, currentTotal + Math.abs(transaction.amount))
+      monthlyTotals.set(monthKey, monthlyTotals.get(monthKey)! + Math.abs(transaction.amount))
     })
 
-    const totals = Array.from(monthlyTotals.values())
-    return totals.reduce((sum, total) => sum + total, 0) / totals.length
+    const averageMonthlySpending = Array.from(monthlyTotals.values())
+      .reduce((sum, total) => sum + total, 0) / monthlyTotals.size
+
+    // Apply a simple trend-based adjustment (±10% based on recent trend)
+    const trend = calculateSpendingTrend(recentTransactions)
+    const adjustmentFactor = 1 + (trend / 1000) // Convert trend percentage to decimal and dampen it
+    
+    return averageMonthlySpending * adjustmentFactor
   }
 
   const generateProactiveSuggestions = async () => {
     try {
+      if (!analyticsData || !settings?.monthlyBudget) {
+        return
+      }
+
       // Get upcoming bills
       const upcomingBills = scheduledPayments?.filter(payment => {
         const dueDate = new Date(payment.dueDate)
         const today = new Date()
         const daysUntilDue = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 3600 * 24))
         return daysUntilDue <= 7 && daysUntilDue > 0
-      })
+      }) || []
 
       // Check for potential shortages
-      const monthlyIncome = monthlySpending.reduce((sum, month) => sum + (month.budget || 0), 0) / monthlySpending.length
+      const monthlyIncome = settings.monthlyBudget
       const predictedExpenses = insights.predictedSpending
       const potentialShortage = predictedExpenses > monthlyIncome
 
       // Generate savings opportunities
-      const savingsOpportunities = analyticsData?.aiRecommendations.spendingOptimizations || []
+      const savingsOpportunities = analyticsData?.aiRecommendations?.spendingOptimizations || []
 
       const suggestions: ProactiveSuggestion[] = [
         // Upcoming bills notifications
@@ -377,7 +433,7 @@ export default function Analytics() {
           id: 'shortage-warning',
           type: 'shortage',
           title: 'Potential Budget Shortage',
-          description: `Based on your spending patterns, you might exceed your monthly income by ${formatAmount(predictedExpenses - monthlyIncome)}`,
+          description: `Based on your spending patterns, you might exceed your monthly budget by ${formatCurrency(predictedExpenses - monthlyIncome)}`,
           impact: predictedExpenses - monthlyIncome,
           priority: 'high',
           action: {
@@ -420,6 +476,7 @@ export default function Analytics() {
       setProactiveSuggestions(suggestions)
     } catch (error) {
       console.error('Error generating proactive suggestions:', error)
+      setProactiveSuggestions([])
     }
   }
 

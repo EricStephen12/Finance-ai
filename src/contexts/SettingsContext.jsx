@@ -6,7 +6,33 @@ import { db } from '@/lib/firebase/config'
 import { useAuth } from './AuthContext'
 import { currencies } from '@/constants/currencies'
 
-const SettingsContext = createContext({})
+const defaultSettings = {
+  currency: 'USD',
+  language: 'en',
+  theme: 'light',
+  notifications: {
+    email: true,
+    push: true,
+    monthlyReport: true,
+    budgetAlerts: true
+  },
+  monthlyBudget: 3000,
+  monthlySavingsGoal: 1000,
+  riskTolerance: 'medium',
+  investmentPreferences: [],
+  taxBracket: '',
+  financialGoals: []
+}
+
+const SettingsContext = createContext({
+  settings: defaultSettings,
+  updateSettings: async () => {},
+  userProfile: null,
+  updateProfile: async () => {},
+  marketData: null,
+  formatCurrency: () => '',
+  loading: true
+})
 
 export function useSettings() {
   return useContext(SettingsContext)
@@ -14,7 +40,7 @@ export function useSettings() {
 
 export function SettingsProvider({ children }) {
   const { user } = useAuth()
-  const [settings, setSettings] = useState(null)
+  const [settings, setSettings] = useState(defaultSettings)
   const [loading, setLoading] = useState(true)
   const [userProfile, setUserProfile] = useState(null)
   const [marketData, setMarketData] = useState(null)
@@ -53,24 +79,6 @@ export function SettingsProvider({ children }) {
 
     loadUserData()
   }, [user])
-
-  const defaultSettings = {
-    currency: 'USD',
-    language: 'en',
-    theme: 'light',
-    notifications: {
-      email: true,
-      push: true,
-      monthlyReport: true,
-      budgetAlerts: true
-    },
-    monthlyBudget: 3000,
-    monthlySavingsGoal: 1000,
-    riskTolerance: 'medium',
-    investmentPreferences: [],
-    taxBracket: '',
-    financialGoals: []
-  }
 
   const updateSettings = async (newSettings) => {
     if (!user) return
